@@ -7,10 +7,10 @@ Just copy celltracker.py into the folder containing the fluorescence image to pr
 
 To run the celltracking algorithm, you need to have the following installed on your computer:
 
-*numpy - http://numpy.scipy.org/
-*scipy - http://scipy.org/
-*OpenCV - http://opencv.willowgarage.com/wiki/
-*matplotlib - http://matplotlib.org/
-*Munkres python module - http://software.clapper.org/munkres/ 
+* numpy - http://numpy.scipy.org/
+* scipy - http://scipy.org/
+* OpenCV - http://opencv.willowgarage.com/wiki/
+* matplotlib - http://matplotlib.org/
+* Munkres python module - http://software.clapper.org/munkres/ 
 
 
