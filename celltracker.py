@@ -278,7 +278,7 @@ def segmentCells(bwImg,propIndex,pThreshold,iterN=2):
 	'''
 	imgOut = segmentCells(bwImg,propIndex,pThreshold,iterN=2) applies a watershed transformation to the regions in bwImg whose property propIndex are smaller than pThreshold.
 	'''
-	labelImg=bwlabel(bwImg)
+	labelImg=bwlabel(bwImg)+0.0
 	lowImg=np.double(np.zeros((np.size(labelImg,0),np.size(labelImg,1))))
 	lowSIndex=np.nonzero(propIndex<pThreshold)
 	if lowSIndex[0].any():
@@ -298,7 +298,7 @@ def segmentCells(bwImg,propIndex,pThreshold,iterN=2):
 		maskImg=(np.ones(((np.size(lowImg,0),np.size(lowImg,1))))-m+lowImg)==1
 		segImg=np.multiply(maskImg,labelImg)>0
 	else:
-		segImg=labelImg
+		return bwImg
 	return np.double(segImg)
 
 def dilateConnected(imgIn,nIter):
@@ -309,8 +309,8 @@ def dilateConnected(imgIn,nIter):
 	bwImgD=np.uint8(imgIn+0.0)
 	imgOut=np.double(imgIn*0)
 	bwLD=bwlabel(bwImgD)
-	for i in range(1,bwLD.max()):
-		imgOut=imgOut+np.double(cv.dilate(np.uint8(bwLD==i),None,iterations=(nIter+1)))
+	for i in range(1,bwLD.max()+1):
+		imgOut=imgOut+np.double(cv.dilate(np.uint8(bwLD==i),None,iterations=(nIter+2)))
 	dilImg=cv.dilate(imgIn,None,iterations=nIter)
 	imgOut=np.double(dilImg)-np.double(imgOut==2)
 	imgOut=imgOut>0
@@ -480,14 +480,15 @@ def putLabelOnImg(fPath,tr,dataRange,dim):
         for file in fileList:
                 if file.endswith('tif'):
                         tifList.append(file)
+	if not dataRange:
+		dataRange=range(len(tifList))
 	for t in dataRange:
 		time_start=time.time()
 		fname = tifList[t] 
 		print fPath+fname
                 img=cv.imread(fPath+fname,-1)
                 img=cv.transpose(img)
-		bwImg=processImage(img,scaleFact=1,sBlur=0.5,sAmount=0,lnoise=1,lobject=8,thres=3,solidThres=0.65,lengthThres=1.5)
-		print time.time()-time_start
+		bwImg=processImage(img,scaleFact=1,sBlur=0.5,sAmount=0,lnoise=1,lobject=8,thres=2,solidThres=0.65,lengthThres=1.5,widthThres=20)
 		plt.imshow(bwImg)
 		plt.hold(True)
 		trT=trTime[t]
@@ -502,7 +503,6 @@ def putLabelOnImg(fPath,tr,dataRange,dim):
 		plt.show()
 		plt.draw()
 		plt.clf()	
-		print time.time()-time_start
 	
 def processImage(imgIn,scaleFact=1,sBlur=0.5,sAmount=0,lnoise=1,lobject=8,thres=3,solidThres=0.65,lengthThres=1.5,widthThres=20):
 	'''
@@ -523,12 +523,13 @@ def processImage(imgIn,scaleFact=1,sBlur=0.5,sAmount=0,lnoise=1,lobject=8,thres=
 	imgB=bpass(imgU,lnoise,lobject)+0.0
 	bwImg=np.uint8(np.double(imgB)>thres)
 	#Segment Cells accorging to solidity
-	bwImg=segmentCells(bwImg,regionprops(bwImg>0,scaleFact)[:,6],solidThres,2)	
+	bwImg=segmentCells(bwImg>0,regionprops(bwImg>0,scaleFact)[:,6],solidThres,2)	
 	#Segment cells according to length
 	mLength=np.mean(regionprops(bwImg>0,scaleFact)[:,2])
-	bwImg=segmentCells(bwImg,-regionprops(bwImg>0,scaleFact)[:,2],-lengthThres*mLength,2)	
+	bwImg=segmentCells(bwImg>0,-regionprops(bwImg>0,scaleFact)[:,2],-lengthThres*mLength,2)	
 	#Segment cells according to width
-	bwImg=segmentCells(bwImg,-regionprops(bwImg>0,scaleFact)[:,3],-widthThres,3)	
+	return bwImg
+	bwImg=segmentCells(bwImg>0,-regionprops(bwImg>0,scaleFact)[:,3],-widthThres,3)	
 	bwImg=np.uint8((bwImg>0))
 	
 	return bwImg
@@ -662,7 +663,7 @@ def linkTracks(masterL,LL):
 
 	print "rename Tracks"
 	#Remove orphaned cells and cells that do not divide
-	tr=renameTracks(tr)	
+#	tr=renameTracks(tr)	
 	
 	print "find family IDs"
 	tr=findFamilyID(tr)
@@ -1181,7 +1182,6 @@ def matchFamilies(trIn):
                         trOut=np.vstack([trOut,trI[id]])	
 	trOut2=findFamilyID(trOut[:,0:9])
 	trOut2=np.hstack([trOut2,np.zeros((len(trOut2),1))])
-	print trOut.shape, trOut2.shape
 	
 	trOut2[:,10]=trOut[:,10]
 	
@@ -1211,7 +1211,7 @@ def addCellAge(trIn):
 		k=k+1
 	
 	return trIn	
-
+'''
 def computeOpticalFlow:
 	xx=zeros((600,1))
 	for i in range(350):
@@ -1220,7 +1220,7 @@ def computeOpticalFlow:
     	A = cv2.calcOpticalFlowFarneback(uint8(bar0),uint8(bar1),pyr_scale=0.5,levels=1,winsize=25,iterations=1,poly_n=5,poly_sigma=1.1,flags=cv2.OPTFLOW_FARNEBACK_GAUSSIAN)
     	xx[i]=sum(A[:,:,0])
     	print i
-
+'''
 def optimizeParameters(fPath,num):
 	"""
 	Tests the processing parameters on a test file 
@@ -1243,7 +1243,7 @@ def optimizeParameters(fPath,num):
 		lobject0=(raw_input('What is the typical object size (leave empty for current='+str(lobject0)+')?') or lobject0)
 		thres0=(raw_input('What is the intensity threshold (leave empty for current='+str(thres0)+')?') or thres0)
 		print 'Please examine the resulting image, close it when done'	
-	        img=cv.imread(fPath+tifList[num],-1)
+		img=cv.imread(fPath+tifList[num],-1)
 		img=cv.transpose(img)
 #		bwImg=processImage(img,scaleFact,sBlur,sAmount,lnoise,lobject,thres,solidThres,lengthThres)
 		bwImg=processImage(img,scaleFact=1,sBlur=0.5,sAmount=0,lnoise=lnoise0,lobject=lobject0,thres=np.double(thres0),solidThres=0.65,lengthThres=1.5)
@@ -1264,6 +1264,7 @@ def optimizeParameters(fPath,num):
 		satisfiedYN=raw_input('Are you satisfied with the parameters? (yes or no) ')
 		if satisfiedYN=='yes':
 			stop=True
+			
 
 	return lnoise0,lobject0,thres0	
 
