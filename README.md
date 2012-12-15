@@ -13,4 +13,5 @@ To run the celltracking algorithm, you need to have the following installed on y
 * matplotlib - http://matplotlib.org/
 * Munkres python module - http://software.clapper.org/munkres/ 
 
+I've included 100 TIFs in a zip file under example/celltrackFigs.zip to test the tracking suite.
 
