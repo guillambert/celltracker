@@ -663,7 +663,7 @@ def linkTracks(masterL,LL):
 
 	print "rename Tracks"
 	#Remove orphaned cells and cells that do not divide
-#	tr=renameTracks(tr)	
+	tr=renameTracks(tr)	
 	
 	print "find family IDs"
 	tr=findFamilyID(tr)
@@ -1271,12 +1271,30 @@ def optimizeParameters(fPath,num):
 
 #When run directly inside a folder containing images of cells, this script creates the rawTrackData file.
 if __name__ == "__main__":
+	'''
+	
+	Options:
+	-i, --interactive (default): ask for the various prompts
+	-n, --no-interaction: processes the images and does the track analysis in the current directory
+	'''
 	import sys
 	import cv2 as cv
 	import numpy as np
-	lnoise,lobject,thres=1,8,3
 	
 	INTERACTIVE=True
+
+	for var in sys.argv:
+		if (var == '-i'):
+			INTERACTIVE=True
+		elif (var == '--interactive'):
+			INTERACTIVE=True
+		elif (var == '-n'):
+			INTERACTIVE=False
+		elif (var=='--no-interaction'):
+			INTERACTIVE=False
+	
+	
+	lnoise,lobject,thres=1,8,2
 
 	if INTERACTIVE:
 		FILEPATH=(raw_input('Please enter the folder you want to analyze (leave empty to use current location) ') or './')
@@ -1306,4 +1324,6 @@ if __name__ == "__main__":
 		tr=linkTracks(masterL,LL)
 		with open(SAVEPATH+'/trData.dat', 'wb') as f:	
 			f.write(b'# xPos yPos time cellID cellLength cellWidth cellAngle avgIntensity divisionEvents familyID cellAge\n')
-			np.savetxt(f,tr)	
+			np.savetxt(f,tr)
+			print 'The analysis is complete. Data saved as '+SAVEPATH+'trData.dat'	
+		
