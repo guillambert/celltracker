@@ -3,7 +3,7 @@ celltracker
 
 Set of tools to track bacterial cells from fluorescence micrographs.
 
-Just copy celltracker.py into the folder containing the fluorescence image to process and run the script by issuing 'python celltracker.py' .
+Just copy celltracker.py into the folder containing the fluorescence image to process and run the script by issuing 'python celltracker.py' from the Terminal.
 
 To run the celltracking algorithm, you need to have the following installed on your computer:
 
