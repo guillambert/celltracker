@@ -8,12 +8,12 @@ Author: Guillaume Lambert
 
 import numpy as np
 import re
-import cv2 as cv
+#import cv2 as cv
 import matplotlib as mp
 import matplotlib.nxutils as nx
 import matplotlib.pylab as plt
 import os as os
-import munkres as mk
+#import munkres as mk
 import time as time
 import sys as sys
 
@@ -648,10 +648,14 @@ def linkTracks(masterL,LL):
 	mList=fixTracks(tr,3,[3,5])
 	#Match the indices of the link candidates
 	tr=reassignTrackID(tr,mList)
+	
+	return tr
+
+def processTracks(trIn):
 
 	#Find and assign the daughter ID at each division (do it twice because the first time around is reorganizes the trackIDs so that the mother is on the left).
 	print "Link mother-daughter tracks"
-	tr=assignDaughter(tr,3,[4,6])
+	tr=assignDaughter(tr[:,0:8],3,[4,6])
 	tr=assignDaughter(tr[:,0:8],3,[4,6])
 	tr=assignDaughter(tr[:,0:8],3,[4,6])
 	tr=assignDaughter(tr[:,0:8],3,[4,6])
@@ -664,14 +668,18 @@ def linkTracks(masterL,LL):
 	print "rename Tracks"
 	#Remove orphaned cells and cells that do not divide
 	tr=renameTracks(tr)	
-	
+
 	print "find family IDs"
 	tr=findFamilyID(tr)
 	
 	tr=matchFamilies(tr)	
 
+	print "Adding cell Age"
 	tr=addCellAge(tr)
-		
+	
+	print "Compute elongation rate"	
+	tr=addElongationRate(tr)
+
 	return tr
 
 def getBoundingBox(param,dist=1):
@@ -1211,8 +1219,38 @@ def addCellAge(trIn):
 		k=k+1
 	
 	return trIn	
+
+def addElongationRate(trIn):
+
+	divLocations=(trIn[:,10]==0).nonzero()[0]
+
+	elongationRate=np.zeros((len(trIn),1))
+
+	for loc in range(len(divLocations)-1):
+		dataRange=range(divLocations[loc],divLocations[loc+1])	
+		dT=trIn[dataRange,4]
+		if len(dT)>20:
+			dT=dT[5:-5]
+			z = np.polyfit(range(len(dT)), np.log(dT), 1)
+			elongationRate[dataRange]=z[0]	
+	
+	trIn=np.hstack([trIn,elongationRate])
+
+	return trIn
+
+
 '''
 def computeOpticalFlow:
+	for i in range(800):
+		bar0=array(im)
+		im.seek(i)
+	    	bar1=array(im)
+		A = cv2.calcOpticalFlowFarneback(uint16(bar0),uint16(bar1),None,pyr_scale=0.5,levels=1,winsize=25,iterations=1,poly_n=5,poly_sigma=1.1,flags=cv2.OPTFLOW_FARNEBACK_GAUSSIAN)
+		xx[i]=sum(A[0:700,:,1])
+		print i
+'''
+
+'''
 	xx=zeros((600,1))
 	for i in range(350):
     	bar0=cv2.transpose(cv2.imread('Fluo_scan_'+str(i)+'_Pos0_g.tif',-1))
@@ -1303,7 +1341,9 @@ if __name__ == "__main__":
 			OPTIMIZEPROCESSING=raw_input('Do you want to optimize the image processing parameters? (yes or no) ')
 			if OPTIMIZEPROCESSING=='yes':
 				lnoise,lobject,thres=optimizeParameters(FILEPATH,0)
-		LINKTRACKS=raw_input('Do you want to link and analyze the cell tracks? (yes or no) ')
+		LINKTRACKS=raw_input('Do you want to link the cell tracks? (yes or no) ')
+		if LINKTRACKS=='yes':
+			PROCESSTRACKS=raw_input('Do you want to analyze the cell tracks? (yes or no) ')
 		SAVEPATH=(raw_input('Please enter the location where the analyzed files will be saved (leave empty to use current location) ') or './')
 	else:
 		FILEPATH='./'
@@ -1322,6 +1362,8 @@ if __name__ == "__main__":
 #		masterL=np.load(SAVEPATH+'masterL.npy')
 #		LL=np.load(SAVEPATH+'LL.npy')
 		tr=linkTracks(masterL,LL)
+		if PROCESSTRACKS=='yes':
+			tr=processTracks(tr)
 		with open(SAVEPATH+'/trData.dat', 'wb') as f:	
 			f.write(b'# xPos yPos time cellID cellLength cellWidth cellAngle avgIntensity divisionEvents familyID cellAge\n')
 			np.savetxt(f,tr)
