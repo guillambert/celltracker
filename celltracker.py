@@ -177,8 +177,8 @@ def regionprops(bwImage,scaleFact=1):
 	'''
 	#import the relevant modules
 	#Find the contours
-	bwI=np.uint8(bwImage+0.0)
-	csr,_ = cv.findContours(bwI+0, mode=cv.RETR_LIST, method=cv.CHAIN_APPROX_SIMPLE)
+	bwI=np.uint8(bwImage.copy())
+	csr,_ = cv.findContours(bwI.copy(), mode=cv.RETR_LIST, method=cv.CHAIN_APPROX_SIMPLE)
 	numC=int(len(csr))
 	#Initialize the variables
 	k=0
@@ -234,10 +234,10 @@ def bwlabel(bwImg):
 
 	#Import relevant modules
 	#Change the type of image
-	bwImg2=np.uint8(bwImg+0.0)
+	bwImg2=np.uint8(bwImg.copy())
 	bw=np.zeros(bwImg2.shape)
 	#Find the contours, count home many there are
-	csl,_ = cv.findContours(bwImg2+0, mode=cv.RETR_LIST, method=cv.CHAIN_APPROX_SIMPLE)
+	csl,_ = cv.findContours(bwImg2.copy(), mode=cv.RETR_LIST, method=cv.CHAIN_APPROX_SIMPLE)
 	numC=int(len(csl))
 	#Label each cell in the figure
 	k=0
@@ -253,9 +253,9 @@ def avgCellInt(rawImg,bwImg):
 	'''
 	STATS = avgCellInt(rawImg,bwImg) return an array containing the pixel value in rawImg of each simply connected region in bwImg.
 	'''
-	bwImg0=bwlabel(bwImg+0)
+	bwImg0=bwlabel(bwImg.copy())
 	bw=np.zeros(bwImg0.shape)
-	csa,_ = cv.findContours(bwImg0+0, mode=cv.RETR_LIST, method=cv.CHAIN_APPROX_SIMPLE)
+	csa,_ = cv.findContours(bwImg0.copy(), mode=cv.RETR_LIST, method=cv.CHAIN_APPROX_SIMPLE)
 	numC=int(len(csa))
 	k=0
 	for i in range(0,numC):
@@ -278,7 +278,7 @@ def segmentCells(bwImg,propIndex,pThreshold,iterN=2):
 	'''
 	imgOut = segmentCells(bwImg,propIndex,pThreshold,iterN=2) applies a watershed transformation to the regions in bwImg whose property propIndex are smaller than pThreshold.
 	'''
-	labelImg=bwlabel(bwImg)+0.0
+	labelImg=bwlabel(bwImg).copy()
 	lowImg=np.double(np.zeros((np.size(labelImg,0),np.size(labelImg,1))))
 	lowSIndex=np.nonzero(propIndex<pThreshold)
 	if lowSIndex[0].any():
@@ -306,7 +306,7 @@ def dilateConnected(imgIn,nIter):
 	imgOut = dilateConnected(imgIn,nIter) dilates a binary image while preserving the number of simply connected domains.
 	nIter is the dilation factor (number of times the dilate function is applied)
 	"""
-	bwImgD=np.uint8(imgIn+0.0)
+	bwImgD=np.uint8(imgIn.copy())
 	imgOut=np.double(imgIn*0)
 	bwLD=bwlabel(bwImgD)
 	for i in range(1,bwLD.max()+1):
@@ -520,7 +520,7 @@ def processImage(imgIn,scaleFact=1,sBlur=0.5,sAmount=0,lnoise=1,lobject=8,thres=
 	'''	
 	img=cv.resize(imgIn,(np.size(imgIn,1)*scaleFact,np.size(imgIn,0)*scaleFact))
 	imgU=(unsharp(img,sBlur,sAmount))
-	imgB=bpass(imgU,lnoise,lobject)+0.0
+	imgB=bpass(imgU,lnoise,lobject).copy()
 	bwImg=np.uint8(np.double(imgB)>thres)
 	#Segment Cells accorging to solidity
 	bwImg=segmentCells(bwImg>0,regionprops(bwImg>0,scaleFact)[:,6],solidThres,2)	
@@ -569,9 +569,9 @@ def trackCells(fPath,lnoise=1,lobject=8,thres=3):
 		bwImg=processImage(img,scaleFact,sBlur,sAmount,lnoise,lobject,thres,solidThres,lengthThres)
 		bwL=bwlabel(bwImg)
 		fileNum=int(re.findall(r'\d+',fname)[0])
-		if bwL.max()>1:
+		if bwL.max()>5:
 			regionP=regionprops(bwImg,scaleFact)
-			#avgCellI=avgCellInt(img+0,bwImg)
+			#avgCellI=avgCellInt(img.copy(),bwImg)
 			avgCellI=np.zeros((len(regionP),1))
 			regionP=np.hstack([regionP,0*avgCellI])
 			if (fileNum-fileNum0)==1:
@@ -581,7 +581,7 @@ def trackCells(fPath,lnoise=1,lobject=8,thres=3):
 				LL.append(linkList)		
 			#Extract regionprops
 			masterList.append(regionP)
-			bwL0=bwL+0
+			bwL0=bwL.copy()
 
 		fileNum0=fileNum
 	endProgress()
@@ -736,7 +736,7 @@ def reassignTrackID(tr,matchList):
 	#Match the indices of the link candidates
 	matchL=matchIndices(matchList.take([0,1,3],axis=1),'Distance')
 
-	tr2=tr+0.0
+	tr2=tr.copy()
 	
 	for id in range(len(matchL)):
 		
@@ -1104,7 +1104,7 @@ def renameTracks(trIn):
 				dId=dT[nDiv[i],8]
 				newID=len(divID)+k
 				newIndex[newID]=dId
-	trOut=trIn+0.0
+	trOut=trIn.copy()
 	trOut[:,3]=0
 	for id in range(len(newIndex)):
 		if not newIndex[id]==0:		
@@ -1143,8 +1143,8 @@ def findFamilyID(trIn):
 			trI[int(id)][:,9]=famID
 		cellIdList=np.setdiff1d(cellIdList,famList)
 		stop=False
-	
-	trLong=trI[0]+0
+		
+	trLong=trI[0].copy()
 	for id in range(1,len(trI)):
 		if not np.isscalar(trI[id]):
 			trLong=np.vstack([trLong,trI[id]])
@@ -1184,7 +1184,7 @@ def matchFamilies(trIn):
 			trI[int(pt[3])][trI[int(pt[3])][:,2]==pt[2],8]=pt[4]
 			trI[int(pt[3])][trI[int(pt[3])][:,2]==pt[2],10]=pt[0]
 			trI[int(pt[4])][0,8]=-pt[3]
-        trOut=trI[0]+0
+        trOut=trI[0].copy()
         for id in range(1,len(trI)):
                 if not np.isscalar(trI[id]):
                         trOut=np.vstack([trOut,trI[id]])	
@@ -1221,7 +1221,9 @@ def addCellAge(trIn):
 	return trIn	
 
 def addElongationRate(trIn):
-
+	'''
+	Fits an exponential to the length between every divisions to find the elongation rate.
+	'''
 	divLocations=(trIn[:,10]==0).nonzero()[0]
 
 	elongationRate=np.zeros((len(trIn),1))
