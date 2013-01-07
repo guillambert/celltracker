@@ -1163,7 +1163,7 @@ def matchFamilies(trIn):
 	#find track ends
 	
 	
-	dist=5	
+	dist=15	
 	famMatchL=np.array([0,0,0,0,0]) #[oldFam, newFam, time, motherID, daughterID]
 	
 	#Loop over each family, find id of family closest to its start, store that in famMatchL=[newfamID, oldFamID]
@@ -1171,7 +1171,7 @@ def matchFamilies(trIn):
 	for famID in range(len(trFam)):
 		if len(trFam[famID])>0:
 			if trFam[famID][0,2]>10:
-				listOfMatches=matchTracks([trFam[famID][0,:]],trIn,dist,[25,-1])
+				listOfMatches=matchTracks([trFam[famID][0,:]],trIn[10:,:],dist,[50,-1])
 				if listOfMatches.any():
 					minD=listOfMatches[:,3].min()
 					match=listOfMatches[(listOfMatches[:,3]==minD).nonzero(),:][0][0]
