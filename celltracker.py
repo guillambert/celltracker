@@ -13,7 +13,7 @@ import matplotlib as mp
 import matplotlib.nxutils as nx
 import matplotlib.pylab as plt
 import os as os
-#import munkres as mk
+import munkres as mk
 import time as time
 import sys as sys
 
@@ -655,7 +655,7 @@ def processTracks(trIn):
 
 	#Find and assign the daughter ID at each division (do it twice because the first time around is reorganizes the trackIDs so that the mother is on the left).
 	print "Link mother-daughter tracks"
-	tr=assignDaughter(tr[:,0:8],3,[4,6])
+	tr=assignDaughter(trIn[:,0:8],3,[4,6])
 	tr=assignDaughter(tr[:,0:8],3,[4,6])
 	tr=assignDaughter(tr[:,0:8],3,[4,6])
 	tr=assignDaughter(tr[:,0:8],3,[4,6])
@@ -1357,12 +1357,12 @@ if __name__ == "__main__":
 
 	if PROCESSFILES=='yes':
 		masterL,LL,AA=trackCells(FILEPATH,np.double(lnoise),np.double(lobject),np.double(thres))
-		#np.save(SAVEPATH+'masterL.npy',masterL)			
-		#np.save(SAVEPATH+'LL.npy',LL)			
+		np.save(SAVEPATH+'masterL.npy',masterL)			
+		np.save(SAVEPATH+'LL.npy',LL)			
 
 	if LINKTRACKS=='yes':
-#		masterL=np.load(SAVEPATH+'masterL.npy')
-#		LL=np.load(SAVEPATH+'LL.npy')
+		masterL=np.load(SAVEPATH+'masterL.npy')
+		LL=np.load(SAVEPATH+'LL.npy')
 		tr=linkTracks(masterL,LL)
 		if PROCESSTRACKS=='yes':
 			tr=processTracks(tr)
