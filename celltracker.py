@@ -660,10 +660,6 @@ def processTracks(trIn):
 	tr=assignDaughter(tr[:,0:8],3,[4,6])
 	tr=assignDaughter(tr[:,0:8],3,[4,6])
 	
-	#Find possible link candidates, 4th pass
-	mList=fixTracks(tr,5,[1,2])
-	#Match the indices of the link candidates
-	tr=reassignTrackID(tr,mList)
 
 	print "rename Tracks"
 	#Remove orphaned cells and cells that do not divide
@@ -1116,6 +1112,9 @@ def renameTracks(trIn):
         trOut=trOut[trOut[:,2].argsort(-1,'mergesort'),]
         trOut=trOut[trOut[:,3].argsort(-1,'mergesort'),]
 
+	#Remove multiply assigned cells	
+	trOut=trOut[np.diff(trOut[:,2])>0,:]
+
 	return trOut
 
 def findFamilyID(trIn):
@@ -1133,7 +1132,7 @@ def findFamilyID(trIn):
 		unlabelledCell=cellIdList[0]
 		famList=np.array([unlabelledCell])
 		while not stop:
-			famList1=famList
+			famList1=famList.copy()
 			for id in famList:
 				famList0=trI[int(id)][trI[int(id)][:,8]>0,8]
 				famList=np.unique(np.hstack([famList,famList0]))
@@ -1155,7 +1154,8 @@ def matchFamilies(trIn):
 	This script matches the start of a new family with either a track that ended or an unmatched division.	
 	'''
 	trIn=np.hstack([trIn,np.zeros((len(trIn),1))])	
-	
+
+		
 	trFam=splitIntoList(trIn,9)
 	trI=splitIntoList(trIn,3)	
 	masterStartList=trIn[np.roll(np.diff(trIn[:,3])>0,1),:]
@@ -1174,26 +1174,32 @@ def matchFamilies(trIn):
 				listOfMatches=matchTracks([trFam[famID][0,:]],trIn[10:,:],dist,[50,-1])
 				if listOfMatches.any():
 					minD=listOfMatches[:,3].min()
+					listOfMatches=listOfMatches[listOfMatches[:,3]<2*minD,:]
+					for i in range(len(listOfMatches)):  #Make sure parent did not divide
+						pt=listOfMatches[i,:]
+						if trIn[(trIn[:,3]==pt[1])&(trIn[:,2]==pt[2]),8]:
+							listOfMatches[i,3]=10*minD					
+						if len(trIn[(trIn[:,3]==pt[1])&(trIn[:,2]==pt[2]),8])==0:
+							listOfMatches[i,3]=10*minD					
+					minD=listOfMatches[:,3].min()
 					match=listOfMatches[(listOfMatches[:,3]==minD).nonzero(),:][0][0]
 					famMatchL=np.vstack([famMatchL,np.array([famID,trI[int(match[1])][0,9],match[2],match[1],match[0]])])
-
+					trIn[(trIn[:,3]==match[1])&(trIn[:,2]==match[2]),8]=match[0]
+	
 	#Loop through the [newFamID,oldFamID] array, updates the negative famID to the 10th column 
 	for id in reversed(range(len(famMatchL))):
 		pt=famMatchL[id]
 		if pt.any():
 			trI[int(pt[3])][trI[int(pt[3])][:,2]==pt[2],8]=pt[4]
-			trI[int(pt[3])][trI[int(pt[3])][:,2]==pt[2],10]=pt[0]
+			trI[int(pt[3])][trI[int(pt[3])][:,2]==pt[2],8]=pt[4]
 			trI[int(pt[4])][0,8]=-pt[3]
         trOut=trI[0].copy()
         for id in range(1,len(trI)):
-                if not np.isscalar(trI[id]):
+	        if not np.isscalar(trI[id]):
                         trOut=np.vstack([trOut,trI[id]])	
-	trOut2=findFamilyID(trOut[:,0:9])
-	trOut2=np.hstack([trOut2,np.zeros((len(trOut2),1))])
+	trOut=findFamilyID(trOut[:,0:9])
 	
-	trOut2[:,10]=trOut[:,10]
-	
-	return trOut2
+	return trOut
 	
 
 def addCellAge(trIn):
@@ -1268,7 +1274,7 @@ def optimizeParameters(fPath,num):
 	import random as rnd
 	lnoise0=1
 	lobject0=8
-	thres0=3
+	thres0=2
 	tifList=[]
 	fileList=sort_nicely(os.listdir(fPath))
 	for file in fileList:
@@ -1357,13 +1363,13 @@ if __name__ == "__main__":
 
 	if PROCESSFILES=='yes':
 		masterL,LL,AA=trackCells(FILEPATH,np.double(lnoise),np.double(lobject),np.double(thres))
-		np.save(SAVEPATH+'masterL.npy',masterL)			
-		np.save(SAVEPATH+'LL.npy',LL)			
+		#np.save(SAVEPATH+'masterL.npy',masterL)			
+		#np.save(SAVEPATH+'LL.npy',LL)			
 
 	if LINKTRACKS=='yes':
 		masterL=np.load(SAVEPATH+'masterL.npy')
-		LL=np.load(SAVEPATH+'LL.npy')
-		tr=linkTracks(masterL,LL)
+		#LL=np.load(SAVEPATH+'LL.npy')
+		#tr=linkTracks(masterL,LL)
 		if PROCESSTRACKS=='yes':
 			tr=processTracks(tr)
 		with open(SAVEPATH+'/trData.dat', 'wb') as f:	
