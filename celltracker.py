@@ -1357,6 +1357,7 @@ if __name__ == "__main__":
 		FILEPATH='./'
 		PROCESSFILES='yes'
 		LINKTRACKS='yes'
+		PROCESSTRACKS='yes'
 		SAVEPATH='./'
 
 	np.savez(SAVEPATH+'processFiles.npz',lnoise=lnoise,lobject=lobject,thres=thres)
@@ -1367,13 +1368,13 @@ if __name__ == "__main__":
 		#np.save(SAVEPATH+'LL.npy',LL)			
 
 	if LINKTRACKS=='yes':
-		masterL=np.load(SAVEPATH+'masterL.npy')
+		#masterL=np.load(SAVEPATH+'masterL.npy')
 		#LL=np.load(SAVEPATH+'LL.npy')
-		#tr=linkTracks(masterL,LL)
+		tr=linkTracks(masterL,LL)
 		if PROCESSTRACKS=='yes':
 			tr=processTracks(tr)
 		with open(SAVEPATH+'/trData.dat', 'wb') as f:	
-			f.write(b'# xPos yPos time cellID cellLength cellWidth cellAngle avgIntensity divisionEvents familyID cellAge\n')
+			f.write(b'# xPos yPos time cellID cellLength cellWidth cellAngle avgIntensity divisionEvents familyID cellAge elongationRate\n')
 			np.savetxt(f,tr)
 			print 'The analysis is complete. Data saved as '+SAVEPATH+'trData.dat'	
 		
