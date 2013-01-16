@@ -8,7 +8,7 @@ Author: Guillaume Lambert
 
 import numpy as np
 import re
-#import cv2 as cv
+import cv2 as cv
 import matplotlib as mp
 import matplotlib.nxutils as nx
 import matplotlib.pylab as plt
@@ -66,15 +66,20 @@ def smoothCS(cs,windowLength):
 		cc[:,0]=smooth(cc[:,0],windowLength)
 		cc[:,1]=smooth(cc[:,1],windowLength)
 		for id2 in range(len(c)):
-			dd.append(np.array([[float(cc[id2,0]), float(cc[id2,1])]]))
+			dd.append(np.array([[float(cc[id2,0]), 
+				  float(cc[id2,1])]]))
 		cs2.append(dd)
 		cs2[id]=np.array(cs2[id])
 	return cs2
 
 def findAxes(m):
 	""" Find the Minor and Major axis of an ellipse having moments m """
-	Major=2*(2*(((m['mu20']+m['mu02'])+((m['mu20']-m['mu02'])**2+4*m['mu11']**2)**0.5))/m['m00'])**0.5
-	Minor=2*(2*(((m['mu20']+m['mu02'])-((m['mu20']-m['mu02'])**2+4*m['mu11']**2)**0.5))/m['m00'])**0.5
+	Major=2*(2*(((m['mu20'] + m['mu02']) + 
+		    ((m['mu20'] - m['mu02'])**2 + 
+	              4*m['mu11']**2)**0.5))/m['m00'])**0.5
+	Minor=2*(2*(((m['mu20'] + m['mu02']) - 
+		    ((m['mu20'] - m['mu02'])**2 + 
+		      4*m['mu11']**2)**0.5))/m['m00'])**0.5
 	return Major,Minor
 
 def anormalize(x):
@@ -122,30 +127,49 @@ def seg_intersect(a1,a2, b1,b2) :
 
 def resetIntersect(x0,y0,x1,y1):
 	if (y0<0.):
-		x0,y0=seg_intersect(array([double(x0),double(y0)]),array([double(x1),double(y1)]),array([-100000000.,0.]),array([100000000.,0.]))
+		x0,y0=seg_intersect(array([double(x0),double(y0)]),
+				    array([double(x1),double(y1)]),
+				    array([-100000000.,0.]),
+				    array([100000000.,0.]))
 	if (y1<0.):
-		x1,y1=seg_intersect(array([double(x0),double(y0)]),array([double(x1),double(y1)]),array([-100000000.,0.]),array([100000000.,0.]))
+		x1,y1=seg_intersect(array([double(x0),double(y0)]),
+				    array([double(x1),double(y1)]),
+				    array([-100000000.,0.]),
+				    array([100000000.,0.]))
 	if (y0>1000.):
-		x0,y0=seg_intersect(array([double(x0),double(y0)]),array([double(x1),double(y1)]),array([-100000000.,1000.]),array([100000000.,10000.]))
+		x0,y0=seg_intersect(array([double(x0),double(y0)]),
+				    array([double(x1),double(y1)]),
+				    array([-100000000.,1000.]),
+				    array([100000000.,10000.]))
 	if (y1>1000.):
-		x1,y1=seg_intersect(array([double(x0),double(y0)]),array([double(x1),double(y1)]),array([-100000000.,1000.]),array([100000000.,10000.]))
+		x1,y1=seg_intersect(array([double(x0),double(y0)]),
+				    array([double(x1),double(y1)]),
+				    array([-100000000.,1000.]),
+				    array([100000000.,10000.]))
 	return x0,y0,x1,y1
 
 def bpass(img,lnoise,lobject):
 	'''
-	imgOut = bpass(img,lnoise,lobject) return an image filtered according to 
-	the lnoise (size of the noise) and the lobject (typical size of the object in the image) parameter.
+	imgOut = bpass(img,lnoise,lobject) return an 
+	image filtered according to the lnoise (size of the noise) 
+	and the lobject (typical size of the object in the image) parameter.
 	
-	The script has been translated from the bpass.m script developed by John C. Crocker and David G. Grier.'''
+	The script has been translated from the bpass.m script developed 
+	by John C. Crocker and David G. Grier.'''
+	
 	lnoise=np.double(lnoise)
 	lobject=np.double(lobject)
 	image_array=np.double(img)  #Convert the input image to double
 	#Create the gaussian and boxcar kernels
-	gauss_kernel=anormalize(np.exp(-np.power(np.arange((-5*lnoise),(5*lnoise))/(2*lnoise),2)))
-	boxcar_kernel=anormalize(np.ones((1,len(np.arange(-lobject,lobject))),dtype=float))
+	gauss_kernel_range=np.arange((-5*lnoise),(5*lnoise))/(2*lnoise)
+	gauss_kernel=anormalize(np.exp(-np.power(gauss_kernel_range,2)))
+	boxcar_kernel=anormalize(np.ones((1,len(np.arange(-lobject,lobject))),
+		                         dtype=float))
 	#Apply the filter to the input image
-	gconv=cv.filter2D(np.transpose(cv.filter2D(np.transpose(image_array),-1,gauss_kernel)),-1,gauss_kernel);
-	bconv=cv.filter2D(np.transpose(cv.filter2D(np.transpose(image_array),-1,boxcar_kernel)),-1,boxcar_kernel);
+	gconv0=cv.filter2D(np.transpose(image_array),-1,gauss_kernel)
+	gconv=cv.filter2D(np.transpose(gconv0),-1,gauss_kernel)
+	bconv0=cv.filter2D(np.transpose(image_array),-1,boxcar_kernel)
+	bconv=cv.filter2D(np.transpose(bconv0),-1,boxcar_kernel)
 	#Create the filtered image
 	filtered=gconv-bconv
 	#Remove the values lower than zero
@@ -156,7 +180,8 @@ def bpass(img,lnoise,lobject):
 
 def unsharp(img,sigma=5,amount=10):
 	'''
-	imgOut = unshapr(img,sigma=5,amount=10) create an unsharp operation on an image. 
+	imgOut = unshapr(img,sigma=5,amount=10) create an unsharp 
+	operation on an image. 
 	If amount=0, create a simple gaussian blur with size sigma.
 	'''
 	if sigma:
@@ -172,21 +197,25 @@ def unsharp(img,sigma=5,amount=10):
 	
 def regionprops(bwImage,scaleFact=1):
 	'''Replicate MATLAB's regionprops script.	
-	STATS = regionprops(bwImage,scaleFact=1) returns the following properties in the STATS array:
-		STATS=[xPosition, yPosition, MajorAxis, MinorAxis, Orientation, Area, Solidity]	 
+	STATS = regionprops(bwImage,scaleFact=1) returns the following 
+	properties in the STATS array:
+	STATS=[xPosition, yPosition, MajorAxis, 
+	       MinorAxis, Orientation, Area, Solidity]	 
 	'''
 	#import the relevant modules
 	#Find the contours
 	bwI=np.uint8(bwImage.copy())
-	csr,_ = cv.findContours(bwI.copy(), mode=cv.RETR_LIST, method=cv.CHAIN_APPROX_SIMPLE)
+	csr,_ = cv.findContours(bwI.copy(),
+				mode=cv.RETR_LIST, 
+				method=cv.CHAIN_APPROX_SIMPLE)
 	numC=int(len(csr))
 	#Initialize the variables
 	k=0
         for i in range(numC):
                 if len(csr[i])>=5:
 			k=k+1
-	MajorAxisLength=np.zeros((k,1),dtype=float)
-	MinorAxisLength=np.zeros((k,1),dtype=float)
+	majorAxis=np.zeros((k,1),dtype=float)
+	minorAxis=np.zeros((k,1),dtype=float)
 	Orientation=np.zeros((k,1),dtype=float)
 	EllipseCentreX=np.zeros((k,1),dtype=float)
 	EllipseCentreY=np.zeros((k,1),dtype=float)
@@ -202,8 +231,9 @@ def regionprops(bwImage,scaleFact=1):
 			#Centroid
 			m = cv.moments(csr[i])
 			if m['m00']>0:			
-				centroid      = ( m['m10']/m['m00'],m['m01']/m['m00'] )
-				MajorAxisLength[k],MinorAxisLength[k]=findAxes(m)
+				centroid      = (m['m10']/m['m00'], 
+						 m['m01']/m['m00'])
+				majorAxis[k],minorAxis[k]=findAxes(m)
 				EllipseCentreX[k]  = centroid[0] # x,y
 				EllipseCentreY[k]  = centroid[1]
 				#Solidity&Area
@@ -219,8 +249,8 @@ def regionprops(bwImage,scaleFact=1):
 	allData=np.zeros((k,7))
 	allData[:,0]=EllipseCentreX.squeeze()/scaleFact
 	allData[:,1]=EllipseCentreY.squeeze()/scaleFact
-	allData[:,2]=MajorAxisLength.squeeze()/scaleFact
-	allData[:,3]=MinorAxisLength.squeeze()/scaleFact
+	allData[:,2]=majorAxis.squeeze()/scaleFact
+	allData[:,3]=minorAxis.squeeze()/scaleFact
 	allData[:,4]=Orientation.squeeze() 
 	allData[:,5]=Area.squeeze()/scaleFact**2 
 	allData[:,6]=Solidity.squeeze() 
@@ -228,8 +258,9 @@ def regionprops(bwImage,scaleFact=1):
 
 def bwlabel(bwImg):
 	'''Replicate MATLAB's bwlabel function.
-	labelledImg = bwlabel(bwImg) takes a black&white image and returns an image where 
-	each connected region is labelled by a unique number.
+	labelledImg = bwlabel(bwImg) takes a black&white image and 
+	returns an image where each connected region is labelled 
+	by a unique number.
 	'''
 
 	#Import relevant modules
@@ -237,7 +268,9 @@ def bwlabel(bwImg):
 	bwImg2=np.uint8(bwImg.copy())
 	bw=np.zeros(bwImg2.shape)
 	#Find the contours, count home many there are
-	csl,_ = cv.findContours(bwImg2.copy(), mode=cv.RETR_LIST, method=cv.CHAIN_APPROX_SIMPLE)
+	csl,_ = cv.findContours(bwImg2.copy(),
+				mode=cv.RETR_LIST, 
+				method=cv.CHAIN_APPROX_SIMPLE)
 	numC=int(len(csl))
 	#Label each cell in the figure
 	k=0
@@ -251,11 +284,14 @@ def bwlabel(bwImg):
 
 def avgCellInt(rawImg,bwImg):
 	'''
-	STATS = avgCellInt(rawImg,bwImg) return an array containing the pixel value in rawImg of each simply connected region in bwImg.
+	STATS = avgCellInt(rawImg,bwImg) return an array containing 
+	the pixel value in rawImg of each simply connected region in bwImg.
 	'''
 	bwImg0=bwlabel(bwImg.copy())
 	bw=np.zeros(bwImg0.shape)
-	csa,_ = cv.findContours(bwImg0.copy(), mode=cv.RETR_LIST, method=cv.CHAIN_APPROX_SIMPLE)
+	csa,_ = cv.findContours(bwImg0.copy(), 
+				mode=cv.RETR_LIST, 
+				method=cv.CHAIN_APPROX_SIMPLE)
 	numC=int(len(csa))
 	k=0
 	for i in range(0,numC):
@@ -276,7 +312,9 @@ def avgCellInt(rawImg,bwImg):
 
 def segmentCells(bwImg,propIndex,pThreshold,iterN=2):
 	'''
-	imgOut = segmentCells(bwImg,propIndex,pThreshold,iterN=2) applies a watershed transformation to the regions in bwImg whose property propIndex are smaller than pThreshold.
+	imgOut = segmentCells(bwImg,propIndex,pThreshold,iterN=2) applies 
+	a watershed transformation to the regions in bwImg whose property 
+	propIndex are smaller than pThreshold.
 	'''
 	labelImg=bwlabel(bwImg).copy()
 	lowImg=np.double(np.zeros((np.size(labelImg,0),np.size(labelImg,1))))
@@ -285,7 +323,8 @@ def segmentCells(bwImg,propIndex,pThreshold,iterN=2):
 		for id in np.transpose(lowSIndex):
 			lowImg = lowImg + np.double(labelImg==(id+1))
 		lowImg=np.uint8(lowImg)
-		markers=cv.dilate(lowImg,None,iterations=iterN)+cv.erode(lowImg,None,iterations=iterN)
+		markers=cv.dilate(lowImg,None,iterations=iterN) + \
+			cv.erode(lowImg,None,iterations=iterN)
 		markers32=np.int32(markers)
 		rgbImg=np.zeros((np.size(lowImg,0),np.size(lowImg,1),3))
 		rgbImg[:,:,0]=np.uint8(lowImg>0)
@@ -295,7 +334,8 @@ def segmentCells(bwImg,propIndex,pThreshold,iterN=2):
 		m=cv.convertScaleAbs(markers32)-1
 #		m=cv.dilate(m,None,iterations=1)
 		m=dilateConnected(m,iterN)
-		maskImg=(np.ones(((np.size(lowImg,0),np.size(lowImg,1))))-m+lowImg)==1
+		maskImg=(np.ones(((np.size(lowImg,0),np.size(lowImg,1)))) - 
+			 m + lowImg)==1
 		segImg=np.multiply(maskImg,labelImg)>0
 	else:
 		return bwImg
@@ -303,23 +343,31 @@ def segmentCells(bwImg,propIndex,pThreshold,iterN=2):
 
 def dilateConnected(imgIn,nIter):
 	"""
-	imgOut = dilateConnected(imgIn,nIter) dilates a binary image while preserving the number of simply connected domains.
-	nIter is the dilation factor (number of times the dilate function is applied)
+	imgOut = dilateConnected(imgIn,nIter) dilates a binary image 
+	while preserving the number of simply connected domains.
+	
+	nIter is the dilation factor 
+	(number of times the dilate function is applied)
 	"""
 	bwImgD=np.uint8(imgIn.copy())
 	imgOut=np.double(imgIn*0)
 	bwLD=bwlabel(bwImgD)
 	for i in range(1,bwLD.max()+1):
-		imgOut=imgOut+np.double(cv.dilate(np.uint8(bwLD==i),None,iterations=(nIter+2)))
+		imgOut=imgOut +  np.double(cv.dilate(np.uint8(bwLD==i),
+			                   None,iterations=(nIter+2)))
 	dilImg=cv.dilate(imgIn,None,iterations=nIter)
-	imgOut=np.double(dilImg)-np.double(imgOut==2)
+	imgOut=np.double(dilImg) - np.double(imgOut==2)
 	imgOut=imgOut>0
 	return imgOut	
 
 def drawVoronoi(points,imgIn):
-	#inspired by http://stackoverflow.com/questions/10650645/python-calculate-voronoi-tesselation-from-scipys-delaunay-triangulation-in-3d
+	"""
+	inspired by http://stackoverflow.com/questions/10650645/
+	python-calculate-voronoi-tesselation-from-scipys-delaunay-triangulation-in-3d
+	"""
 	from scipy.spatial import Delaunay
-	#Draw a BW image of a voronoi tesselation, with the lines having a value of 1 and the rest 0
+	# Draw a BW image of a voronoi tesselation,
+	# with the lines having a value of 1 and the rest 0
 
 	imgIn=np.double(imgIn)
 	
@@ -341,7 +389,8 @@ def drawVoronoi(points,imgIn):
 
 	# Grab the Voronoi edges
 	vc = cc[:,tri.neighbors]
-	vc[:,tri.neighbors == -1] = np.nan # edges at infinity, plotting those would need more work...
+	vc[:,tri.neighbors == -1] = np.nan # edges at infinity, 
+					   # plotting those would need more work...
 
 	lines = []
 	lines.extend(zip(cc.T, vc[:,:,0].T))
@@ -357,13 +406,16 @@ def drawVoronoi(points,imgIn):
 			x1=(lin[1][0])
 			y1=(lin[1][1])
 			x0,y0,x1,y1=resetIntersect(x0,y0,x1,y1)
-			cv.line(imgIn,(int(x0),int(y0)),(int(x1),int(y1)),(1,1,1),thickness=2)
+			cv.line(imgIn,(int(x0),int(y0)),(int(x1),
+				int(y1)),(1,1,1),thickness=2)
 	return imgIn
 
 
 def labelOverlap(img1,img2):
 	'''
-	areaList = labelOverlap(img1,img2) finds the overlapping cells between two images. 
+	areaList = labelOverlap(img1,img2) finds the overlapping 
+	cells between two images. 
+	
 	Returns areaList as [label1 label2 area]
 	img1 and img2 should be generated with bwlabel.
 	'''
@@ -371,8 +423,10 @@ def labelOverlap(img1,img2):
 	overlapImg=np.uint8((img1>0)*(img2>0))
 	index1=overlapImg*np.uint8(img1)
 	index2=overlapImg*np.uint8(img2)
+
 	#Store the index couples in a list
 	indexList=np.vstack([index1.flatten(0),index2.flatten(0)])
+	
 	#remove the [0,0] rows, convert to 1D structured array
 	indexList=np.uint16(np.transpose(indexList[:,indexList[0,:]>0]))
 	indexList=indexList.view(','.join(2 * ['i2']))
@@ -391,9 +445,15 @@ def labelOverlap(img1,img2):
 
 def matchIndices(dataList,matchType='Area'):
 	'''
-	linkList=matchIndices(dataList,matchType='Area') uses the Munkres algorithm to performs an assignment problem from the data in dataList=[id1,id2,distanceValue]. 
-	if matchType='Area', it can be used to match the cell areas between successive frames (favorises largest area value)
-	if matchType='Distance', it can be used to match the cell positions between successive frames (favorises smallest distance value)
+	linkList=matchIndices(dataList,matchType='Area') uses the 
+	Munkres algorithm to performs an assignment problem from the 
+	data in dataList=[id1,id2,distanceValue]. 
+	
+	*if matchType='Area', it can be used to match the cell areas 
+	between successive frames (favorizes largest area value)
+	
+	*if matchType='Distance', it can be used to match the cell 
+	positions between successive frames (favorises smallest distance value)
 	'''
 	linkList=[0,0,0];
 	#Loop over each indices to find its related matches.
@@ -409,13 +469,16 @@ def matchIndices(dataList,matchType='Area'):
 			while stop==0:
 				matchData0=np.array(matchData)
 				for i in np.transpose(np.unique(matchData[:,1])):
-					matchData=np.vstack([matchData,dataList[dataList[:,1]==i,:]])
+					matchData=np.vstack([matchData,
+						             dataList[dataList[:,1]==i,:]])
 				for i in np.transpose(np.unique(matchData[:,0])):
-					matchData=np.vstack([matchData,dataList[dataList[:,0]==i,:]])
+					matchData=np.vstack([matchData,
+						             dataList[dataList[:,0]==i,:]])
 				matchData=unique_rows(matchData)
 				if np.array_equal(matchData,matchData0):
 					stop=1
-			#Create a label for each cell (instead of the cell ID, which may have gaps)	
+			#Create a label for each cell 
+			# (instead of the cell ID, which may have gaps)	
 			k0=0
 			assign0=np.zeros((np.max(matchData[:,0])+1))
 			assign1=np.zeros((np.max(matchData[:,1])+1))
@@ -432,24 +495,28 @@ def matchIndices(dataList,matchType='Area'):
 			A=np.zeros((k,k))
 			for i in range(len(matchData[:,0])):
 				if matchType is 'Area':
-					A[assign0[matchData[i,0]]-1][assign1[matchData[i,1]]-1]=matchData[i,2]	
+					indx1=assign0[matchData[i,0]]-1
+					indx2=assign1[matchData[i,1]]-1
+					A[indx1][indx2]=matchData[i,2]	
 				elif matchType is 'Distance':
 					if matchData[i,2]>0:
-						A[assign0[matchData[i,0]]-1][assign1[matchData[i,1]]-1]=1/matchData[i,2]
+						indx1=assign0[matchData[i,0]]-1
+						indx2=assign1[matchData[i,1]]-1
+						A[indx1][indx2]=1/matchData[i,2]
 			#Find matching elements with munkres algorithm
 			m=mk.Munkres()
-			indices=m.compute(-A)
+			inds=m.compute(-A)
 			linkList0=np.zeros((len(matchData[:,0]),3))
 			#Put result into the linkList0 array
-			for i in range(len(indices)):
-				if ((indices[i][0]+1)<=k0)&((indices[i][1]+1)<=k1):
-					linkList0[i,0]=np.nonzero(assign0==(indices[i][0]+1))[0][0]
-					linkList0[i,1]=np.nonzero(assign1==(indices[i][1]+1))[0][0]
+			for i in range(len(inds)):
+				if ((inds[i][0]+1)<=k0)&((inds[i][1]+1)<=k1):
+					linkList0[i,0]=np.nonzero(assign0==(inds[i][0]+1))[0][0]
+					linkList0[i,1]=np.nonzero(assign1==(inds[i][1]+1))[0][0]
 					if matchType is 'Area':
-						linkList0[i,2]=A[indices[i][0]][indices[i][1]]
+						linkList0[i,2]=A[inds[i][0]][inds[i][1]]
 					elif matchType is 'Distance':
-						if A[indices[i][0]][indices[i][1]]>0:
-							linkList0[i,2]=1/A[indices[i][0]][indices[i][1]]
+						if A[inds[i][0]][inds[i][1]]>0:
+							linkList0[i,2]=1/A[inds[i][0]][inds[i][1]]
 
 			linkList0=linkList0[linkList0[:,2]>0,:]
 			#Append data at the end of linkList
@@ -466,8 +533,9 @@ def matchIndices(dataList,matchType='Area'):
 
 def putLabelOnImg(fPath,tr,dataRange,dim):
 	'''
-	putLabelOnImg(fPath,tr,dataRange,dim) goes through the images in folder fPath over the time in dataRange 
-	and adds on top of each cell the values stored along dimension=dim of tr.
+	putLabelOnImg(fPath,tr,dataRange,dim) goes through the images in 
+	folder fPath over the time in dataRange and adds on top of each 
+	cell the values stored along dimension=dim of tr.
 	'''
 	#Initialize variables
 	tifList=[] 
@@ -488,13 +556,20 @@ def putLabelOnImg(fPath,tr,dataRange,dim):
 		print fPath+fname
                 img=cv.imread(fPath+fname,-1)
                 img=cv.transpose(img)
-		bwImg=processImage(img,scaleFact=1,sBlur=0.5,sAmount=0,lnoise=1,lobject=8,thres=2,solidThres=0.65,lengthThres=1.5,widthThres=20)
+		bwImg=processImage(img,scaleFact=1,sBlur=0.5,
+				   sAmount=0,lnoise=1,lobject=8,
+				   thres=2,solidThres=0.65,
+				   lengthThres=1.5,widthThres=20)
 		plt.imshow(bwImg)
 		plt.hold(True)
 		trT=trTime[t]
 		for cell in range(len(trT[:,3])):
-			#plt.text(trT[cell,0],trT[cell,1],str(trT[cell,dim])+', '+str(trT[cell,3]),color='w',fontsize=6)
-			plt.text(trT[cell,0],trT[cell,1],str(trT[cell,dim]),color='w',fontsize=10)
+			'''plt.text(trT[cell,0],trT[cell,1],
+			            str(trT[cell,dim])+', '+str(trT[cell,3]),
+				    color='w',fontsize=6)
+			'''
+			plt.text(trT[cell,0],trT[cell,1],
+				 str(trT[cell,dim]),color='w',fontsize=10)
 			boxPts=getBoundingBox(trT[cell,:])
 			plt.plot(boxPts[:,0],boxPts[:,1],'w')
 		plt.title(str(t))
@@ -504,32 +579,46 @@ def putLabelOnImg(fPath,tr,dataRange,dim):
 		plt.draw()
 		plt.clf()	
 	
-def processImage(imgIn,scaleFact=1,sBlur=0.5,sAmount=0,lnoise=1,lobject=8,thres=3,solidThres=0.65,lengthThres=1.5,widthThres=20):
+def processImage(imgIn,scaleFact=1,sBlur=0.5,sAmount=0,lnoise=1,
+		 lobject=8,thres=3,solidThres=0.65,
+		 lengthThres=1.5,widthThres=20):
 	'''
 	This is the core of the image analysis part of the tracking algorithm.
-	bwImg=processImage(imgIn,scaleFact=1,sBlur=0.5,sAmount=0,lnoise=1,lobject=8,thres=3,solidThres=0.65,lengthThres=1.5,widthThres=20) returns a black and white image processed from a grayscale input (imgIn(.
-	scaleFact: scales the image by this factor prior to performing the analysis
-	sBlur = size of the characteristic noise you want to remove with a gaussian blur.
+	bwImg=processImage(imgIn,scaleFact=1,sBlur=0.5,sAmount=0,lnoise=1,
+	                   lobject=8,thres=3,solidThres=0.65,lengthThres=1.5,
+			   widthThres=20) 
+	returns a black and white image processed from 
+		a grayscale input (imgIn(.
+	scaleFact: scales the image by this factor prior 
+		to performing the analysis
+	sBlur = size of the characteristic noise you want 
+		to remove with a gaussian blur.
 	sAmount = magnitude of the unsharp mask used to process the image
 	lnoise = size of the typical noise when segmenting the image
 	lobject = typical size of the pbject to be considered
 	thres = intensity threshold used to create the black and white image
 	solidThres = size of the lowest allowed cell solidity
-	lengthThres = length of the cell at which you expect cell to start dividing (1.5 = 1.5 times the average length)
-	widthThres = width of the cells. Cells above that width will be segmented as they may represent joined cells
+	lengthThres = length of the cell at which you expect cell 
+		to start dividing (1.5 = 1.5 times the average length)
+	widthThres = width of the cells. Cells above that width will be 
+		segmented as they may represent joined cells
 	'''	
-	img=cv.resize(imgIn,(np.size(imgIn,1)*scaleFact,np.size(imgIn,0)*scaleFact))
+	img=cv.resize(imgIn,(np.size(imgIn,1)*scaleFact,
+		      np.size(imgIn,0)*scaleFact))
 	imgU=(unsharp(img,sBlur,sAmount))
 	imgB=bpass(imgU,lnoise,lobject).copy()
 	bwImg=np.uint8(np.double(imgB)>thres)
 	#Segment Cells accorging to solidity
-	bwImg=segmentCells(bwImg>0,regionprops(bwImg>0,scaleFact)[:,6],solidThres,2)	
+	bwImg=segmentCells(bwImg>0,regionprops(bwImg>0,scaleFact)[:,6],
+			   solidThres,2)	
 	#Segment cells according to length
 	mLength=np.mean(regionprops(bwImg>0,scaleFact)[:,2])
-	bwImg=segmentCells(bwImg>0,-regionprops(bwImg>0,scaleFact)[:,2],-lengthThres*mLength,2)	
+	bwImg=segmentCells(bwImg>0,-regionprops(bwImg>0,scaleFact)[:,2],
+			   -lengthThres*mLength,2)	
 	#Segment cells according to width
 	return bwImg
-	bwImg=segmentCells(bwImg>0,-regionprops(bwImg>0,scaleFact)[:,3],-widthThres,3)	
+	bwImg=segmentCells(bwImg>0,-regionprops(bwImg>0,scaleFact)[:,3],
+			   -widthThres,3)	
 	bwImg=np.uint8((bwImg>0))
 	
 	return bwImg
@@ -537,7 +626,8 @@ def processImage(imgIn,scaleFact=1,sBlur=0.5,sAmount=0,lnoise=1,lobject=8,thres=
 def trackCells(fPath,lnoise=1,lobject=8,thres=3):
 	'''
 	This prepares the data necessary to track the cells.
-	masterL,LL,AA=trackCells(fPath,lnoise=1,lobject=8,thres=5) processes the files in fPath.
+	masterL,LL,AA=trackCells(fPath,lnoise=1,lobject=8,thres=5)
+	processes the files in fPath.
 	'''
 	#Initialize variables
 	sBlur=0.5
@@ -566,7 +656,9 @@ def trackCells(fPath,lnoise=1,lobject=8,thres=3):
 		progress(np.double(k)/np.double(kmax))
 		img=cv.imread(fPath+fname,-1)
 		img=cv.transpose(img)
-		bwImg=processImage(img,scaleFact,sBlur,sAmount,lnoise,lobject,thres,solidThres,lengthThres)
+		bwImg=processImage(img,scaleFact,sBlur,
+				   sAmount,lnoise,lobject,
+				   thres,solidThres,lengthThres)
 		bwL=bwlabel(bwImg)
 		fileNum=int(re.findall(r'\d+',fname)[0])
 		if bwL.max()>5:
@@ -593,13 +685,17 @@ def updateTR(M,L,time):
 	This function orders the values in masterL (M) from L at t=time.
 	'''
 	trTemp=np.zeros((len(L[time]),8))
-	trTemp[:,[0,1,3,4,5,6,7]]=M[time][(L[time][:,0]-1).tolist(),:].take([0,1,8,2,3,4,7],axis=1)
+	parentIndex=(L[time][:,0]-1).tolist()
+	trTemp[:,[0,1,3,4,5,6,7]]=M[time][parentIndex,:].take([0,1,8,2,3,4,7],
+			                                      axis=1)
 	return trTemp
 	
 def linkTracks(masterL,LL):
 	'''
 	tr=linkTracks(masterL,LL) links the frame-to-frame tracks.
-	It returns an array tr=[xPos,yPos,time,cellId,length,width,orientation,pixelIntensity,divisionEvents,familyID,age]
+	It returns an array tr=[xPos,yPos,time,cellId,length,width,
+				orientation,pixelIntensity,divisionEvents,
+				familyID,age]
 	'''
 	#Links the frame-to-frame tracks 
 	
@@ -614,7 +710,8 @@ def linkTracks(masterL,LL):
 	print "Linking cell overlaps"
 	for t in range(totalTime-1):
 		tr0=np.zeros((len(LL[t+1]),8))
-		masterL[t+1]=np.hstack([masterL[t+1],np.zeros((len(masterL[t+1]),1))])		
+		masterL[t+1]=np.hstack([masterL[t+1],
+			                np.zeros((len(masterL[t+1]),1))])
 		masterL[t+1][(LL[t][:,1]-1).tolist(),8]=ids
 		tr0=updateTR(masterL,LL,t+1)
 		tr0[:,2]=t+1
@@ -652,8 +749,14 @@ def linkTracks(masterL,LL):
 	return tr
 
 def processTracks(trIn):
-
-	#Find and assign the daughter ID at each division (do it twice because the first time around is reorganizes the trackIDs so that the mother is on the left).
+	"""
+	tr=processTracks(trIn) returns a track with linked mother/daughter
+	labels (tr[:,8]), identified family id (tr[:,10]), cell age (tr[:,11])
+	and the elongation rate (tr[:,12])
+	"""
+	#Find and assign the daughter ID at each division 
+	# (do it twice because the first time around is reorganizes the 
+	# trackIDs so that the mother is on the left).
 	print "Link mother-daughter tracks"
 	tr=assignDaughter(trIn[:,0:8],3,[4,6])
 	tr=assignDaughter(tr[:,0:8],3,[4,6])
@@ -681,8 +784,10 @@ def processTracks(trIn):
 def getBoundingBox(param,dist=1):
 	'''
 	boxPts=getBoundingBox(param,dist=1)
-	Return the polygon that bounds an ellipse defined by param = [xPos,yPos,time,id,length,orientation]
-	The parameter dist denotes the factor by which the length and width are multiplied by when creating the bounding box.
+	Return the polygon that bounds an ellipse defined by 
+	param = [xPos,yPos,time,id,length,orientation]
+	The parameter dist denotes the factor by which the length 
+	and width are multiplied by when creating the bounding box.
 	'''	
 	#Define parameters
 	Pos=[param[0],param[1]]
@@ -691,7 +796,11 @@ def getBoundingBox(param,dist=1):
 	Orient=param[6]*np.pi/180
 	
 	RotMatrix=[[np.cos(Orient),-np.sin(Orient)], [np.sin(Orient),np.cos(Orient)]]
-	boxPts=[[SemiMinor/2,SemiMajor/2],[-SemiMinor/2,SemiMajor/2],[-SemiMinor/2,-SemiMajor/2],[SemiMinor/2,-SemiMajor/2],[SemiMinor/2,SemiMajor/2]]
+	boxPts=[[SemiMinor/2,SemiMajor/2],
+		[-SemiMinor/2,SemiMajor/2],
+		[-SemiMinor/2,-SemiMajor/2],
+		[SemiMinor/2,-SemiMajor/2],
+		[SemiMinor/2,SemiMajor/2]]
 	for elem in range(len(boxPts)):
 		boxPts[elem]=np.dot(RotMatrix,boxPts[elem])+[Pos[0],Pos[1]]
 	
@@ -699,7 +808,8 @@ def getBoundingBox(param,dist=1):
 
 def eucledianDistances(xy1, xy2):
 	'''
-	dist=eucledianDistances(xy1,xy2) returns the eucledian distances between the set of xy-points xy1 and xy2.
+	dist=eucledianDistances(xy1,xy2) returns the eucledian distances 
+	between the set of xy-points xy1 and xy2.
 	xy should be n-by-2 arrays containing [xPos,yPos]
 	'''
 	d0 = np.subtract.outer(xy1[:,0], xy2[:,0])
@@ -708,9 +818,15 @@ def eucledianDistances(xy1, xy2):
 
 def fixTracks(tr,dist,timeRange):
 	'''
-	listOfMatches=fixTracks(tr,dist,timeRange) finds the trackIDs that join track ends with nearby track starts.
-	dist is the factor by which the box bounding a cells is multiplied by when looking for possible candidates.
-	timeRange is given by [t1,t2] and denotes how far in the past (t1) and future (t2) should the script check to find the possible candidates.
+	listOfMatches=fixTracks(tr,dist,timeRange) finds the trackIDs 
+	that join track ends with nearby track starts.
+	
+	dist is the factor by which the box bounding a cells is 
+	multiplied by when looking for possible candidates.
+
+	timeRange is given by [t1,t2] and denotes how far in the 
+	past (t1) and future (t2) should the script check to find 
+	the possible candidates.
 	'''
 	#Find track ends	
 	masterEndList=tr[np.diff(tr[:,3])>0,:]
@@ -718,14 +834,16 @@ def fixTracks(tr,dist,timeRange):
 	#Find track starts
 	masterStartList=tr[np.roll(np.diff(tr[:,3])>0,1),:]
 	
-	listOfMatches=matchTracks(masterEndList,masterStartList,dist,timeRange)
+	listOfMatches=matchTracks(masterEndList,masterStartList,
+				  dist,timeRange)
 
 	return listOfMatches	
 	#Reassign the track IDs
 
 def reassignTrackID(tr,matchList):
 	'''
-	tr=reassignTrackID(tr,matchList) use the output of fixTracks to reassing the proper id to matched tracks
+	tr=reassignTrackID(tr,matchList) use the output of fixTracks 
+	to reassing the proper id to matched tracks
 	'''
 
 	shortTrack=3
@@ -757,7 +875,8 @@ def reassignTrackID(tr,matchList):
 
 def removeShortTracks(tr,shortTrack=3):
 	'''
-	tr=removeShortTracks(tr,shortTrack=3) removes tracks shorter than shortTrack
+	tr=removeShortTracks(tr,shortTrack=3) removes 
+	tracks shorter than shortTrack
 	'''
 	trLength=mp.pyplot.hist(tr[:,3],np.unique(tr[:,3]))
         idLong=trLength[1][trLength[0]>shortTrack]
@@ -777,8 +896,9 @@ def removeShortTracks(tr,shortTrack=3):
 def matchTracks(inList1,inList2,dist,timeRange):
 	'''
 	Find the closest pairs between inList1 and inList2.
-	Normally, inList1 is masterEndList or the list of division events and  inlist2 is masterStartList
-	timeRange is the time before and after inList1 where you should look for matching candidates. 
+	Normally, inList1 is masterEndList or the list of division events 
+	and  inlist2 is masterStartList timeRange is the time before and 
+	after inList1 where you should look for matching candidates. 
 	This returns an array with [id1, id2, time, distance]
 	'''
 	matchList=np.zeros((1,4))
@@ -789,16 +909,21 @@ def matchTracks(inList1,inList2,dist,timeRange):
 		boxPts=getBoundingBox(pts,dist)	
 
 		#Find starting points that fall inside the bounding box
-		nearPts=inList2[(inList2[:,2]<=(pts[2]+timeRange[1]))&(inList2[:,2]>=(pts[2]-timeRange[0])),:]
+		nearPts=inList2[(inList2[:,2]<=(pts[2]+timeRange[1])) & 
+				(inList2[:,2]>=(pts[2]-timeRange[0])),:]
 		inIndx=nx.points_inside_poly(nearPts[:,0:2],boxPts)		
 		
 		if inIndx.any():
 			inPts=nearPts[inIndx,:]
 			
-			pole1=np.array([[pts[0]+pts[4]/2*np.cos(pts[6]*np.pi/180),pts[1]+pts[5]/2*np.sin(pts[6]*np.pi/180)]])
-			pole2=np.array([[pts[0]-pts[4]/2*np.cos(pts[6]*np.pi/180),pts[1]-pts[5]/2*np.sin(pts[6]*np.pi/180)]])
-			poleIn1=np.array([[inPts[:,0]+inPts[:,4]/2*np.cos(inPts[:,6]*np.pi/180),inPts[:,1]+inPts[:,5]/2*np.sin(inPts[:,6]*np.pi/180)]])
-			poleIn2=np.array([[inPts[:,0]-inPts[:,4]/2*np.cos(inPts[:,6]*np.pi/180),inPts[:,1]-inPts[:,5]/2*np.sin(inPts[:,6]*np.pi/180)]])
+			pole1=np.array([[pts[0] + pts[4]/2*np.cos(pts[6]*np.pi/180),
+				         pts[1] + pts[5]/2*np.sin(pts[6]*np.pi/180)]])
+			pole2=np.array([[pts[0] - pts[4]/2*np.cos(pts[6]*np.pi/180),
+					 pts[1] - pts[5]/2*np.sin(pts[6]*np.pi/180)]])
+			poleIn1=np.array([[inPts[:,0] + inPts[:,4]/2*np.cos(inPts[:,6]*np.pi/180),
+				           inPts[:,1] + inPts[:,5]/2*np.sin(inPts[:,6]*np.pi/180)]])
+			poleIn2=np.array([[inPts[:,0] - inPts[:,4]/2*np.cos(inPts[:,6]*np.pi/180),
+				           inPts[:,1] - inPts[:,5]/2*np.sin(inPts[:,6]*np.pi/180)]])
 	
 				
 			#Compute the distance between each one and the track	
@@ -814,8 +939,9 @@ def matchTracks(inList1,inList2,dist,timeRange):
 			
 			for id in range(len(VL)):
 				V=np.array([VL[id],VR[id],VC[id]])
-				D=np.array([[pts[3],inPts[id,3],pts[2],T[id]+V.min()]]) 			
-				matchList=np.append(matchList,D,0)
+				Dist=np.array([[pts[3],inPts[id,3],
+					     pts[2],T[id]+V.min()]]) 			
+				matchList=np.append(matchList,Dist,0)
 	#Match start and finishes with matchIndices
 	matchList=matchList[matchList[:,0]>0,:]
 
@@ -825,7 +951,8 @@ def splitIntoList(listIn,dim):
 	'''
 	listOut=splitIntoList(listIn,dim)
 	This function splits an array according to a specific index. 
-	For instance, if dim=1 is the time label, it will create a list where list[t] is the data at time t.
+	For instance, if dim=1 is the time label, it will create a list 
+	where list[t] is the data at time t.
 	'''
 	#Declare how fine the array will be split into
 	divL=100
@@ -836,13 +963,15 @@ def splitIntoList(listIn,dim):
 		if listT.shape[0]>0:
 			listOut[int(id)]=(listT[listT[:,dim]==id,:])
 		if np.mod(id,divL)==0:
-			listT=listIn[(listIn[:,dim]>id)&(listIn[:,dim]<=(id+divL)),:]
+			listT=listIn[(listIn[:,dim]>id) & 
+				     (listIn[:,dim]<=(id+divL)),:]
 			
 	return listOut	
 
 def findDivisionEvents(trIn):
 	'''
-	divE=findDivisionEvents(trIn) goes through each cell tracks and finds the times at which each divides.
+	divE=findDivisionEvents(trIn) goes through each cell tracks and 
+	finds the times at which each divides.
 	divE returns an array with divE=[cellID,time]
 	'''
 	trT=splitIntoList(trIn,3)
@@ -853,7 +982,8 @@ def findDivisionEvents(trIn):
 				divEvents=findDivs(tr[:,4])
 				if divEvents.any():
 					divTimes=tr[divEvents.tolist(),2]
-					divT=np.vstack([divTimes*0+tr[0,3],divTimes])	
+					divT=np.vstack([divTimes*0 + tr[0,3],
+						        divTimes])	
 					divE=np.append(divE,divT.transpose(),0)
 	divE=divE[1:len(divE),:]
 	return divE
@@ -1072,7 +1202,8 @@ def relabelCells(tr,div):
 
 def renameTracks(trIn):
 	'''
-	This script changes the track assignment list to remove tracks which are childless orphans. 	
+	This script changes the track assignment list to remove
+	tracks which are childless orphans. 	
 	'''
 	#trIn=removeShortTracks(trIn,0)
 	trI=splitIntoList(trIn,3)
@@ -1118,7 +1249,10 @@ def renameTracks(trIn):
 	return trOut
 
 def findFamilyID(trIn):
-	#Label the cells that are member of the same family with their family ID in the 10th column.
+	"""
+	Label the cells that are member of the same family with their 
+	family ID in the 10th column.
+	"""
 	trIn=np.hstack([trIn,np.zeros((len(trIn),1))])
 	trI=splitIntoList(trIn,3)
 	cellIdList=np.unique(trIn[:,3])
@@ -1135,7 +1269,8 @@ def findFamilyID(trIn):
 			famList1=famList.copy()
 			for id in famList:
 				famList0=trI[int(id)][trI[int(id)][:,8]>0,8]
-				famList=np.unique(np.hstack([famList,famList0]))
+				famList=np.unique(np.hstack([famList,
+					                     famList0]))
 			if np.array_equal(famList,famList1):
 				stop=True	
 		for id in famList:
@@ -1151,7 +1286,8 @@ def findFamilyID(trIn):
 		
 def matchFamilies(trIn):
 	'''
-	This script matches the start of a new family with either a track that ended or an unmatched division.	
+	This script matches the start of a new family with either a 
+	track that ended or an unmatched division.	
 	'''
 	trIn=np.hstack([trIn,np.zeros((len(trIn),1))])	
 
@@ -1166,20 +1302,23 @@ def matchFamilies(trIn):
 	dist=15	
 	famMatchL=np.array([0,0,0,0,0]) #[oldFam, newFam, time, motherID, daughterID]
 	
-	#Loop over each family, find id of family closest to its start, store that in famMatchL=[newfamID, oldFamID]
+	# Loop over each family, find id of family closest to its start, 
+	# store that in famMatchL=[newfamID, oldFamID]
 
 	for famID in range(len(trFam)):
 		if len(trFam[famID])>0:
 			if trFam[famID][0,2]>10:
-				listOfMatches=matchTracks([trFam[famID][0,:]],trIn[10:,:],dist,[50,-1])
+				listOfMatches=matchTracks([trFam[famID][0,:]],
+							   trIn[10:,:],
+							   dist,[50,-1])
 				if listOfMatches.any():
 					minD=listOfMatches[:,3].min()
 					listOfMatches=listOfMatches[listOfMatches[:,3]<2*minD,:]
 					for i in range(len(listOfMatches)):  #Make sure parent did not divide
 						pt=listOfMatches[i,:]
-						if trIn[(trIn[:,3]==pt[1])&(trIn[:,2]==pt[2]),8]:
+						if trIn[(trIn[:,3]==pt[1]) & (trIn[:,2]==pt[2]),8]:
 							listOfMatches[i,3]=10*minD					
-						if len(trIn[(trIn[:,3]==pt[1])&(trIn[:,2]==pt[2]),8])==0:
+						if len(trIn[(trIn[:,3]==pt[1]) & (trIn[:,2]==pt[2]),8])==0:
 							listOfMatches[i,3]=10*minD					
 					minD=listOfMatches[:,3].min()
 					match=listOfMatches[(listOfMatches[:,3]==minD).nonzero(),:][0][0]
@@ -1253,7 +1392,11 @@ def computeOpticalFlow:
 		bar0=array(im)
 		im.seek(i)
 	    	bar1=array(im)
-		A = cv2.calcOpticalFlowFarneback(uint16(bar0),uint16(bar1),None,pyr_scale=0.5,levels=1,winsize=25,iterations=1,poly_n=5,poly_sigma=1.1,flags=cv2.OPTFLOW_FARNEBACK_GAUSSIAN)
+		A = cv2.calcOpticalFlowFarneback(uint16(bar0),uint16(bar1),
+						 None,pyr_scale=0.5,levels=1,
+						 winsize=25,iterations=1,
+						 poly_n=5,poly_sigma=1.1,
+						 flags=cv2.OPTFLOW_FARNEBACK_GAUSSIAN)
 		xx[i]=sum(A[0:700,:,1])
 		print i
 '''
@@ -1263,7 +1406,10 @@ def computeOpticalFlow:
 	for i in range(350):
     	bar0=cv2.transpose(cv2.imread('Fluo_scan_'+str(i)+'_Pos0_g.tif',-1))
     	bar1=cv2.transpose(cv2.imread('Fluo_scan_'+str(i+1)+'_Pos0_g.tif',-1))
-    	A = cv2.calcOpticalFlowFarneback(uint8(bar0),uint8(bar1),pyr_scale=0.5,levels=1,winsize=25,iterations=1,poly_n=5,poly_sigma=1.1,flags=cv2.OPTFLOW_FARNEBACK_GAUSSIAN)
+    	A = cv2.calcOpticalFlowFarneback(uint8(bar0),uint8(bar1),
+					 pyr_scale=0.5,levels=1,winsize=25,
+					 iterations=1,poly_n=5,poly_sigma=1.1,
+					 flags=cv2.OPTFLOW_FARNEBACK_GAUSSIAN)
     	xx[i]=sum(A[:,:,0])
     	print i
 '''
@@ -1291,8 +1437,10 @@ def optimizeParameters(fPath,num):
 		print 'Please examine the resulting image, close it when done'	
 		img=cv.imread(fPath+tifList[num],-1)
 		img=cv.transpose(img)
-#		bwImg=processImage(img,scaleFact,sBlur,sAmount,lnoise,lobject,thres,solidThres,lengthThres)
-		bwImg=processImage(img,scaleFact=1,sBlur=0.5,sAmount=0,lnoise=lnoise0,lobject=lobject0,thres=np.double(thres0),solidThres=0.65,lengthThres=1.5)
+		bwImg=processImage(img,scaleFact=1,sBlur=0.5,sAmount=0,
+				   lnoise=lnoise0,lobject=lobject0,
+				   thres=np.double(thres0),solidThres=0.65,
+				   lengthThres=1.5)
 		fig = plt.figure()
 		ax1 = fig.add_subplot(3,1,1)
 		ax1.imshow(img)	
@@ -1307,7 +1455,7 @@ def optimizeParameters(fPath,num):
 		ax3.set_title('Thresholded image. Threshold value='+str(thres0)+'. ')	
 		
 		plt.show()
-		satisfiedYN=raw_input('Are you satisfied with the parameters? (yes or no) ')
+		satisfiedYN=raw_input('Are you satisfied with the  parameters? (yes or no) ')
 		if satisfiedYN=='yes':
 			stop=True
 			
@@ -1321,7 +1469,8 @@ if __name__ == "__main__":
 	
 	Options:
 	-i, --interactive (default): ask for the various prompts
-	-n, --no-interaction: processes the images and does the track analysis in the current directory
+	-n, --no-interaction: processes the images and does the 
+		track analysis in the current directory
 	'''
 	import sys
 	import cv2 as cv
