@@ -772,6 +772,7 @@ def processTracks(trIn):
 	tr=findFamilyID(tr)
 	
 	tr=matchFamilies(tr)	
+	tr=matchFamilies(tr)	
 
 	print "Adding cell Age"
 	tr=addCellAge(tr)
