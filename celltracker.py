@@ -796,6 +796,8 @@ def processTracks(trIn):
 	tr=matchFamilies(tr)	
 	tr=matchFamilies(tr)	
 
+	tr=fixFamilies(tr)	
+
 	print "Adding cell Age"
 	tr=addCellAge(tr)
 	
@@ -1309,8 +1311,8 @@ def findFamilyID(trIn):
 		
 def matchFamilies(trIn):
 	'''
-	This script matches the start of a new family with either a 
-	track that ended or an unmatched division.	
+	This script matches the start of a new family with 
+	the closest cell.	
 	'''
 	trIn=np.hstack([trIn,np.zeros((len(trIn),1))])	
 
@@ -1363,6 +1365,27 @@ def matchFamilies(trIn):
 	
 	return trOut
 	
+def fixFamilies(trIn):
+	'''
+	Sometimes, matchFamilies cannot assign a division event because it can't find
+	the mother cell at the time of the division. 
+	This script goes through every family that should be matched and assigns the 
+	division id to the mother cell.
+	'''
+	
+	for famId in range(1,int(max(trIn[:,9]))):
+		dT=trIn[trIn[:,9]==famId,:]
+		daughterID=dT[:,3][0]
+		if dT[0,8]<0:
+			motherID=abs(dT[0,8])
+			divPos=((trIn[:,3]==motherID).nonzero()[0])
+			if trIn[divPos[-1],8]==0:
+				trIn[divPos[-1],8]=daughterID
+			else:
+				trIn[divPos[-2],8]=daughterID
+
+	trOut=findFamilyID(trIn[:,0:9])
+	return trOut
 
 def addCellAge(trIn):
 	'''
