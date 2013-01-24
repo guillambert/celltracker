@@ -282,6 +282,28 @@ def bwlabel(bwImg):
 			cv.drawContours( bw, csl, i, 0, thickness=-1)
 	return np.uint8(bw)
 
+def drawConvexHull(bwImg):
+	        #Import relevant modules
+        #Change the type of image
+        bwImg2=np.uint8(bwImg.copy())
+        bw=np.zeros(bwImg2.shape)
+        #Find the contours, count home many there are
+        csl,_ = cv.findContours(bwImg2.copy(),
+                                mode=cv.RETR_LIST,
+                                method=cv.CHAIN_APPROX_SIMPLE)
+        numC=int(len(csl))
+        #Label each cell in the figure
+        k=0
+        for i in range(numC):
+                if len(csl[i])>=5:
+			chl=cv.convexHull(csl[i])
+                        k=k+1
+                        cv.drawContours( bw, [chl], 0, 1, thickness=-1)
+                else:
+                        cv.drawContours( bw, csl, i, 0, thickness=-1)
+        return np.uint8(bw)
+
+
 def avgCellInt(rawImg,bwImg):
 	'''
 	STATS = avgCellInt(rawImg,bwImg) return an array containing 
