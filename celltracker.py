@@ -1375,8 +1375,10 @@ def fixFamilies(trIn):
 	division id to the mother cell.
 	'''
 	
-	for famId in range(1,int(max(trIn[:,9]))):
+	for famId in np.unique(trIn[:,9]):
+		famId=int(famId)
 		dT=trIn[trIn[:,9]==famId,:]
+		
 		daughterID=dT[:,3][0]
 		if dT[0,8]<0:
 			motherID=abs(dT[0,8])
