@@ -1022,6 +1022,8 @@ def findDivs(L):
 	win_size=10
 	if len(L)>win_size:
 		std_thres=7.5
+		#Remove the points with a large positive derivative
+		L[np.roll(np.diff(L)/L[:-1]>0.5,1)]=(L[np.diff(L)/L[:-1]>0.5])
 		Lw=rolling_window(L,win_size)
 		Lstd=np.std(Lw,-1)
 		Li=(Lstd>std_thres)
