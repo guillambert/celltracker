@@ -206,7 +206,7 @@ def regionprops(bwImage,scaleFact=1):
 	#Find the contours
 	bwI=np.uint8(bwImage.copy())
 	csr,_ = cv.findContours(bwI.copy(),
-				mode=cv.RETR_LIST, 
+				mode=cv.RETR_TREE, 
 				method=cv.CHAIN_APPROX_SIMPLE)
 	numC=int(len(csr))
 	#Initialize the variables
@@ -269,7 +269,7 @@ def bwlabel(bwImg):
 	bw=np.zeros(bwImg2.shape)
 	#Find the contours, count home many there are
 	csl,_ = cv.findContours(bwImg2.copy(),
-				mode=cv.RETR_LIST, 
+				mode=cv.RETR_TREE, 
 				method=cv.CHAIN_APPROX_SIMPLE)
 	numC=int(len(csl))
 	#Label each cell in the figure
@@ -305,6 +305,18 @@ def removeSmallBlobs(bwImg,bSize=10):
 	maskBW=1-bw 
 	return np.uint8(bwImg2*maskBW)
 
+def floodFill(imgIn,seedPt,pixelValue):
+	'''
+	This script perform a flood fill, starting from seedPt.
+	'''
+	labelledImg=bwlabel(imgIn)
+	regionID=imgIn[seedPt[0],seedPt[1]]
+
+	bwImg=imgIn.copy()
+	bwImg[labelledImg==regionID]=pixelValue		
+
+	return bwImg
+
 def drawConvexHull(bwImg):
 	        #Import relevant modules
         #Change the type of image
@@ -312,7 +324,7 @@ def drawConvexHull(bwImg):
         bw=np.zeros(bwImg2.shape)
         #Find the contours, count home many there are
         csl,_ = cv.findContours(bwImg2.copy(),
-                                mode=cv.RETR_LIST,
+                                mode=cv.RETR_TREE,
                                 method=cv.CHAIN_APPROX_SIMPLE)
         numC=int(len(csl))
         #Label each cell in the figure
@@ -335,7 +347,7 @@ def avgCellInt(rawImg,bwImg):
 	bwImg0=bwlabel(bwImg.copy())
 	bw=np.zeros(bwImg0.shape)
 	csa,_ = cv.findContours(bwImg0.copy(), 
-				mode=cv.RETR_LIST, 
+				mode=cv.RETR_TREE, 
 				method=cv.CHAIN_APPROX_SIMPLE)
 	numC=int(len(csa))
 	k=0
