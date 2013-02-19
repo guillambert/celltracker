@@ -282,6 +282,29 @@ def bwlabel(bwImg):
 			cv.drawContours( bw, csl, i, 0, thickness=-1)
 	return np.uint8(bw)
 
+def removeSmallBlobs(bwImg,bSize=10):
+	'''
+	imgOut=removeSmallBlobs(bwImg,bSize) removes processes a binary image
+	and removes the blobs which are smaller than bSize (area).
+	'''
+	bwImg2=np.uint8(bwImg.copy())
+	bw=np.zeros(bwImg2.shape)
+
+        #Find the contours, count home many there are
+        csl,_ = cv.findContours(bwImg2.copy(),
+                                mode=cv.RETR_TREE,
+                                method=cv.CHAIN_APPROX_SIMPLE)
+        numC=int(len(csl))
+	#Label each cell in the figure which are smaller than bSize
+        for i in range(numC):
+		area = cv.contourArea( csl[i]);
+                if area<=bSize:
+                        cv.drawContours( bw, csl, i, 1, thickness=-1)
+                else:
+                        cv.drawContours( bw, csl, i, 0, thickness=-1)
+	maskBW=1-bw 
+	return np.uint8(bwImg2*maskBW)
+
 def drawConvexHull(bwImg):
 	        #Import relevant modules
         #Change the type of image
@@ -1375,10 +1398,8 @@ def fixFamilies(trIn):
 	division id to the mother cell.
 	'''
 	
-	for famId in np.unique(trIn[:,9]):
-		famId=int(famId)
+	for famId in range(1,int(max(trIn[:,9]))):
 		dT=trIn[trIn[:,9]==famId,:]
-		
 		daughterID=dT[:,3][0]
 		if dT[0,8]<0:
 			motherID=abs(dT[0,8])
