@@ -413,9 +413,34 @@ def dilateConnected(imgIn,nIter):
 		imgOut=imgOut +  np.double(cv.dilate(np.uint8(bwLD==i),
 			                   None,iterations=(nIter+2)))
 	dilImg=cv.dilate(imgIn,None,iterations=nIter)
-	imgOut=np.double(dilImg) - np.double(imgOut==2)
+	skelBnd = skeletonTransform(np.uint8(imgOut>1))
+	skelBnd = cv.dilate(skelBnd,None,iterations=1)
+	skelBnd = removeSmallBlobs(skelBnd,3)
+
+	imgOut=np.double(dilImg) - skelBnd*(bwLD==0)
 	imgOut=imgOut>0
-	return imgOut	
+	return np.double(imgOut)	
+
+def skeletonTransform(bwImg):
+	'''
+	Generate the skeleton transform of a binary image
+	Based on: 
+	http://opencvpython.blogspot.com/2012/05/skeletonization-using-opencv-python.html
+	'''
+	element = cv.getStructuringElement(cv.MORPH_CROSS,(3,3))
+	done = False
+	img = np.uint8(bwImg.copy())
+	skel = img*0
+	while not done:
+		eroded = cv.erode(img,element)
+		temp = cv.dilate(eroded,element)
+		temp = img - temp
+		skel = cv.bitwise_or(skel,temp)	
+		img = eroded.copy()
+		
+		if not cv.countNonZero(img):
+			done = True
+	return skel
 
 def drawVoronoi(points,imgIn):
 	"""
@@ -672,13 +697,32 @@ def processImage(imgIn,scaleFact=1,sBlur=0.5,sAmount=0,lnoise=1,
 	mLength=np.mean(regionprops(bwImg>0,scaleFact)[:,2])
 	bwImg=segmentCells(bwImg>0,-regionprops(bwImg>0,scaleFact)[:,2],
 			   -lengthThres*mLength,2)	
-	#Segment cells according to width
 	return bwImg
+	#Segment cells according to width (currently not used)
 	bwImg=segmentCells(bwImg>0,-regionprops(bwImg>0,scaleFact)[:,3],
 			   -widthThres,3)	
 	bwImg=np.uint8((bwImg>0))
 	
 	return bwImg
+
+def preProcessCyano(brightImg,chlorophyllImg):
+	'''
+	Pre-process the Chlorophyll and brightfield images so that they can be
+	analyzed with processImages
+	''' 
+	cellMask = cv.dilate(np.uint8(bpass(chlorophyllImg,1,10)>10),None,iterations=15)
+	processedBrightfield = bpass(brightImg,1,10)>15
+
+	dilatedIm=cv.dilate(removeSmallBlobs(processedBrightfield*cellMask,15),None,iterations=3)
+
+	if np.sum(cellMask==0):
+		seedPt = ((1-cellMask).nonzero()[0][0],(1-cellMask).nonzero()[1][0])
+
+		imgOut=dilateConnected(1-floodFill(dilatedIm,seedPt,1),3)
+	else:
+		imgOut=dilateConnected(1-dilatedIm,3)
+
+	return imgOut
 
 def trackCells(fPath,lnoise=1,lobject=8,thres=3):
 	'''
