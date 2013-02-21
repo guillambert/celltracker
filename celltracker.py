@@ -280,7 +280,7 @@ def bwlabel(bwImg):
 			cv.drawContours( bw, csl, i, k, thickness=-1)
 		else:
 			cv.drawContours( bw, csl, i, 0, thickness=-1)
-	return np.uint8(bw)
+	return np.uint16(bw)
 
 def removeSmallBlobs(bwImg,bSize=10):
 	'''
@@ -336,7 +336,7 @@ def drawConvexHull(bwImg):
                         cv.drawContours( bw, [chl], 0, 1, thickness=-1)
                 else:
                         cv.drawContours( bw, csl, i, 0, thickness=-1)
-        return np.uint8(bw)
+        return np.uint16(bw)
 
 
 def avgCellInt(rawImg,bwImg):
@@ -344,9 +344,9 @@ def avgCellInt(rawImg,bwImg):
 	STATS = avgCellInt(rawImg,bwImg) return an array containing 
 	the pixel value in rawImg of each simply connected region in bwImg.
 	'''
-	bwImg0=bwlabel(bwImg.copy())
+	bwImg0=bwlabel(np.uint8(bwImg.copy()))
 	bw=np.zeros(bwImg0.shape)
-	csa,_ = cv.findContours(bwImg0.copy(), 
+	csa,_ = cv.findContours(bwImg.copy(), 
 				mode=cv.RETR_TREE, 
 				method=cv.CHAIN_APPROX_SIMPLE)
 	numC=int(len(csa))
@@ -379,7 +379,7 @@ def segmentCells(bwImg,propIndex,pThreshold,iterN=2):
 	if lowSIndex[0].any():
 		for id in np.transpose(lowSIndex):
 			lowImg = lowImg + np.double(labelImg==(id+1))
-		lowImg=np.uint8(lowImg)
+		lowImg=np.uint16(lowImg)
 		markers=cv.dilate(lowImg,None,iterations=iterN) + \
 			cv.erode(lowImg,None,iterations=iterN)
 		markers32=np.int32(markers)
@@ -410,12 +410,11 @@ def dilateConnected(imgIn,nIter):
 	imgOut=np.double(imgIn*0)
 	bwLD=bwlabel(bwImgD)
 	for i in range(1,bwLD.max()+1):
-		imgOut=imgOut +  np.double(cv.dilate(np.uint8(bwLD==i),
+		imgOut=imgOut +  np.double(cv.dilate(np.uint16(bwLD==i),
 			                   None,iterations=(nIter+2)))
 	dilImg=cv.dilate(imgIn,None,iterations=nIter)
 	skelBnd = skeletonTransform(np.uint8(imgOut>1))
 	skelBnd = cv.dilate(skelBnd,None,iterations=1)
-	skelBnd = removeSmallBlobs(skelBnd,3)
 
 	imgOut=np.double(dilImg) - skelBnd*(bwLD==0)
 	imgOut=imgOut>0
@@ -440,6 +439,10 @@ def skeletonTransform(bwImg):
 		
 		if not cv.countNonZero(img):
 			done = True
+	#Remove isolated pixels
+
+	skel = skel - cv.filter2D(skel,-1,np.array([[-9,-9,-9],[-9,1,-9],[-9,-9,-9]],dtype=float))
+
 	return skel
 
 def drawVoronoi(points,imgIn):
@@ -503,8 +506,8 @@ def labelOverlap(img1,img2):
 	'''
 	#Find the overlapping indices	
 	overlapImg=np.uint8((img1>0)*(img2>0))
-	index1=overlapImg*np.uint8(img1)
-	index2=overlapImg*np.uint8(img2)
+	index1=overlapImg*np.uint16(img1)
+	index2=overlapImg*np.uint16(img2)
 
 	#Store the index couples in a list
 	indexList=np.vstack([index1.flatten(0),index2.flatten(0)])
@@ -710,19 +713,26 @@ def preProcessCyano(brightImg,chlorophyllImg):
 	Pre-process the Chlorophyll and brightfield images so that they can be
 	analyzed with processImages
 	''' 
+	solidThres=0.75
 	cellMask = cv.dilate(np.uint8(bpass(chlorophyllImg,1,10)>10),None,iterations=15)
 	processedBrightfield = bpass(brightImg,1,10)>15
 
-	dilatedIm=cv.dilate(removeSmallBlobs(processedBrightfield*cellMask,15),None,iterations=3)
+	dilatedIm=cv.dilate(removeSmallBlobs(processedBrightfield*cellMask,15),None,iterations=2)
+#	dilatedIm=(removeSmallBlobs(processedBrightfield*cellMask,15))
 
 	if np.sum(cellMask==0):
 		seedPt = ((1-cellMask).nonzero()[0][0],(1-cellMask).nonzero()[1][0])
 
-		imgOut=dilateConnected(1-floodFill(dilatedIm,seedPt,1),3)
+		imgOut=dilateConnected(1-floodFill(dilatedIm,seedPt,1),2)
+#		imgOut=(1-floodFill(dilatedIm,seedPt,1))
 	else:
 		imgOut=dilateConnected(1-dilatedIm,3)
+	
+	#Segment Cells accorging to solidity
+#	imgOut=segmentCells(imgOut>0,regionprops(imgOut>0,1)[:,6],
+#			   solidThres,2)	
 
-	return imgOut
+	return np.uint8(imgOut)
 
 def trackCells(fPath,lnoise=1,lobject=8,thres=3):
 	'''
@@ -802,7 +812,7 @@ def linkTracks(masterL,LL):
 	
 	totalTime=len(LL)
 	ids=np.arange(len(LL[0]))+1
-	masterL[0]=np.hstack([masterL[0],np.zeros((len(masterL[0]),1))])
+	masterL[0]=np.hstack((masterL[0],np.zeros((len(masterL[0]),1))))
 	masterL[0][(LL[0][:,0]-1).tolist(),8]=ids
 	tr=updateTR(masterL,LL,0)
 	tr[:,2]=0
@@ -872,9 +882,11 @@ def processTracks(trIn):
 	print "find family IDs"
 	tr=findFamilyID(tr)
 	
+	print "match family IDs"
 	tr=matchFamilies(tr)	
 	tr=matchFamilies(tr)	
 
+	print "fix family IDs"
 	tr=fixFamilies(tr)	
 
 	print "Adding cell Age"
@@ -1456,14 +1468,15 @@ def fixFamilies(trIn):
 	
 	for famId in range(1,int(max(trIn[:,9]))):
 		dT=trIn[trIn[:,9]==famId,:]
-		daughterID=dT[:,3][0]
-		if dT[0,8]<0:
-			motherID=abs(dT[0,8])
-			divPos=((trIn[:,3]==motherID).nonzero()[0])
-			if trIn[divPos[-1],8]==0:
-				trIn[divPos[-1],8]=daughterID
-			else:
-				trIn[divPos[-2],8]=daughterID
+		if dT.shape[0]:
+			daughterID=dT[:,3][0]
+			if dT[0,8]<0:
+				motherID=abs(dT[0,8])
+				divPos=((trIn[:,3]==motherID).nonzero()[0])
+				if trIn[divPos[-1],8]==0:
+					trIn[divPos[-1],8]=daughterID
+				else:
+					trIn[divPos[-2],8]=daughterID
 
 	trOut=findFamilyID(trIn[:,0:9])
 	return trOut
