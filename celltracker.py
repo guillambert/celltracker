@@ -1113,8 +1113,10 @@ def findDivs(L):
 	win_size=10
 	if len(L)>win_size:
 		std_thres=7.5
-		#Remove the points with a large positive derivative
+		#Remove the points with a large positive derivative, do this twice
 		L[np.roll(np.diff(L)/L[:-1]>0.5,1)]=(L[np.diff(L)/L[:-1]>0.5])
+		L[np.roll(np.diff(L)/L[:-1]>0.5,1)]=(L[np.diff(L)/L[:-1]>0.5])
+		
 		Lw=rolling_window(L,win_size)
 		Lstd=np.std(Lw,-1)
 		Li=(Lstd>std_thres)
@@ -1127,10 +1129,10 @@ def findDivs(L):
 		Blist=B[np.diff(Li)]
 		#If the number delimiting point is odd
 		if np.mod(len(Blist),2)==1:
-			if L[0]:
+			if Li[0]:
 				Blist=np.append(np.array([0]),Blist)
 			else:
-				Blist=np.append(Blist,np.array([0]))
+				Blist=np.append(Blist,np.array([len(L)]))
 		Blist=Blist.reshape(-1,2)				
 		#Find the general location of a division event.
 		divLoc=(np.diff(np.log(L))<-0.4).nonzero()
@@ -1139,6 +1141,12 @@ def findDivs(L):
 			E=divLoc[0][(divLoc[0]>pt[0])&(divLoc[0]<pt[1])]		
 			if E.any():
 				divTimes=np.append(divTimes,np.max(E))
+		#Check if length is higher later
+		for i in range(len(divTimes)):
+			divs=divTimes[i]
+			if L[divs:(divs+10)].max()>L[divs]:
+				divTimes[i]=0
+	divTimes=divTimes[divTimes!=0]
 	divTimes=divTimes[divTimes>10]	
 	return divTimes
 
