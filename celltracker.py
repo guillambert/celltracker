@@ -715,7 +715,7 @@ def preProcessCyano(brightImg,chlorophyllImg):
 	''' 
 	solidThres=0.75
 	cellMask = cv.dilate(np.uint8(bpass(chlorophyllImg,1,10)>10),None,iterations=15)
-	processedBrightfield = bpass(brightImg,1,10)>15
+	processedBrightfield = bpass(brightImg,1,10)>250
 
 	dilatedIm=cv.dilate(removeSmallBlobs(processedBrightfield*cellMask,15),None,iterations=2)
 #	dilatedIm=(removeSmallBlobs(processedBrightfield*cellMask,15))
@@ -726,7 +726,7 @@ def preProcessCyano(brightImg,chlorophyllImg):
 		imgOut=dilateConnected(1-floodFill(dilatedIm,seedPt,1),2)
 #		imgOut=(1-floodFill(dilatedIm,seedPt,1))
 	else:
-		imgOut=dilateConnected(1-dilatedIm,3)
+		imgOut=dilateConnected(1-dilatedIm,2)
 	
 	#Segment Cells accorging to solidity
 #	imgOut=segmentCells(imgOut>0,regionprops(imgOut>0,1)[:,6],
