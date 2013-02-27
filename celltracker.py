@@ -1111,18 +1111,28 @@ def findDivs(L):
 	'''	
 	divTimes=np.array([])
 	win_size=10
+	divJumpSize=15
 	if len(L)>win_size:
-		std_thres=7.5
+		std_thres=0.15
 		#Remove the points with a large positive derivative, do this twice
-		L[np.roll(np.diff(L)/L[:-1]>0.5,1)]=(L[np.diff(L)/L[:-1]>0.5])
-		L[np.roll(np.diff(L)/L[:-1]>0.5,1)]=(L[np.diff(L)/L[:-1]>0.5])
+		jumpID=(np.diff(L)>divJumpSize).nonzero()[0]
+		L[jumpID+1]=L[jumpID]
+		
+		jumpID=(np.diff(L)>divJumpSize).nonzero()[0]
+		L[jumpID+1]=L[jumpID]
 		
 		Lw=rolling_window(L,win_size)
-		Lstd=np.std(Lw,-1)
+		Lstd=np.std(Lw,-1)/np.mean(Lw,-1)
 		Li=(Lstd>std_thres)
 		B=np.arange(len(Li))+win_size/2
+		if Li[0]:
+			Li[0]=False
+		if Li[-1]:
+			Li[-1]=False
 		#Create list of points limiting the region of interest
 		Blist=B[np.diff(Li)]
+		
+		
 		#If the number delimiting point is odd
 		if np.mod(len(Blist),2)==1:
 			if Li[0]:
@@ -1131,10 +1141,10 @@ def findDivs(L):
 				Blist=np.append(Blist,np.array([len(L)]))
 		Blist=Blist.reshape(-1,2)				
 		#Find the general location of a division event.
-		divLoc=(np.diff(np.log(L))<-0.4).nonzero()
+		divLoc=(np.diff(L)<-divJumpSize).nonzero()
 		#Go through each point in the track
 		for pt in Blist:
-			E=divLoc[0][(divLoc[0]>pt[0])&(divLoc[0]<pt[1])]		
+			E=divLoc[0][(divLoc[0]>pt[0])&(divLoc[0]<pt[1])]	
 			if E.any():
 				divTimes=np.append(divTimes,np.max(E))
 		#Check if length is higher later
