@@ -1121,10 +1121,6 @@ def findDivs(L):
 		Lstd=np.std(Lw,-1)
 		Li=(Lstd>std_thres)
 		B=np.arange(len(Li))+win_size/2
-		#If last point is outside range (meaning division at end).
-		if Li[-1]:
-			Li[-2]=True
-			Li[-1]=False
 		#Create list of points limiting the region of interest
 		Blist=B[np.diff(Li)]
 		#If the number delimiting point is odd
