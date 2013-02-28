@@ -1095,12 +1095,10 @@ def revertListIntoArray(listIn):
 
 	arrayOut=list(range(len(listIn)/nID+1))
 	
-	arrayOut[0]=listIn[0].copy()
+	arrayOut[0]=listIn[1].copy()
 	
-	print arrayOut
-
 	k=0
-	for id in range(1,len(listIn)):
+	for id in range(2,len(listIn)):
 		if np.size(arrayOut[k])==1:
 			arrayOut[k]=listIn[id]
 		elif len(listIn[id])>0:
@@ -1110,7 +1108,8 @@ def revertListIntoArray(listIn):
 
 	arrayOutAll=arrayOut[0].copy()
 	for id in range(1,len(arrayOut)):
-		arrayOutAll=np.vstack((arrayOutAll,arrayOut[id]))	
+		if np.size(arrayOut[id])>1:
+			arrayOutAll=np.vstack((arrayOutAll,arrayOut[id]))	
 
 
 	return arrayOutAll
