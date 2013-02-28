@@ -1081,8 +1081,39 @@ def splitIntoList(listIn,dim):
 		if np.mod(id,divL)==0:
 			listT=listIn[(listIn[:,dim]>id) & 
 				     (listIn[:,dim]<=(id+divL)),:]
-			
+		
 	return listOut	
+
+def revertListIntoArray(listIn):
+	'''
+	arrayOut=revertListIntoArray(listIn,dim)
+	This function is the reverse of splitIntoList: it takes
+	a list and concatenate the results into an array.
+	'''
+	#Declare the rough size of the array
+	nID=100	
+
+	arrayOut=list(range(len(listIn)/nID+1))
+	
+	arrayOut[0]=listIn[0].copy()
+	
+	print arrayOut
+
+	k=0
+	for id in range(1,len(listIn)):
+		if np.size(arrayOut[k])==1:
+			arrayOut[k]=listIn[id]
+		elif len(listIn[id])>0:
+			arrayOut[k]=np.vstack((arrayOut[k],listIn[id]))
+		if np.mod(id,nID)==0:
+			k=k+1
+
+	arrayOutAll=arrayOut[0].copy()
+	for id in range(1,len(arrayOut)):
+		arrayOutAll=np.vstack((arrayOutAll,arrayOut[id]))	
+
+
+	return arrayOutAll
 
 def findDivisionEvents(trIn):
 	'''
