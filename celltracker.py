@@ -344,8 +344,9 @@ def avgCellInt(rawImg,bwImg):
 	STATS = avgCellInt(rawImg,bwImg) return an array containing 
 	the pixel value in rawImg of each simply connected region in bwImg.
 	'''
-	bwImg0=bwlabel(np.uint8(bwImg.copy()))
+	bwImg0=np.uint8(bwImg.copy())
 	bw=np.zeros(bwImg0.shape)
+	
 	csa,_ = cv.findContours(bwImg.copy(), 
 				mode=cv.RETR_TREE, 
 				method=cv.CHAIN_APPROX_SIMPLE)
@@ -354,16 +355,17 @@ def avgCellInt(rawImg,bwImg):
 	for i in range(0,numC):
 		if len(csa[i])>=5:
 			k=k+1
-	avgCellI=np.zeros((k,1),dtype=float)
-	rawImg=rawImg.reshape(-1)
+	avgCellI=np.zeros((k+1,1),dtype=float)
+	
 	k=0
 	for i in range(0,numC):
 		if len(csa[i])>=5:
 			# Average Pixel value		
-			regionMask = (bwImg0==(i))
-			regionMask=regionMask.reshape(-1) 
-			avgCellI[k]=np.mean(rawImg[regionMask>0])
+			bw=np.zeros(bwImg0.shape)
 			k=k+1
+			cv.drawContours( bw, csa, i, 1, thickness=-1)
+			regionMask = (bw==(1))
+			avgCellI[k]=np.sum(rawImg*regionMask)/np.sum(regionMask)
 	return np.double(avgCellI)
 
 
@@ -715,13 +717,13 @@ def preProcessCyano(brightImg,chlorophyllImg):
 	''' 
 	solidThres=0.75
 	cellMask = cv.dilate(np.uint8(bpass(chlorophyllImg,1,10)>10),None,iterations=15)
-	processedBrightfield = bpass(brightImg,1,10)>250
+	processedBrightfield = bpass(brightImg,1,10)>10
 
 	dilatedIm=cv.dilate(removeSmallBlobs(processedBrightfield*cellMask,15),None,iterations=2)
 #	dilatedIm=(removeSmallBlobs(processedBrightfield*cellMask,15))
 
 	if np.sum(cellMask==0):
-		seedPt = ((1-cellMask).nonzero()[0][0],(1-cellMask).nonzero()[1][0])
+		seedPt = ((1-cellMask).nonzero()[0][10],(1-cellMask).nonzero()[1][10])
 
 		imgOut=dilateConnected(1-floodFill(dilatedIm,seedPt,1),2)
 #		imgOut=(1-floodFill(dilatedIm,seedPt,1))
@@ -961,7 +963,8 @@ def reassignTrackID(tr,matchList):
 	tr=reassignTrackID(tr,matchList) use the output of fixTracks 
 	to reassing the proper id to matched tracks
 	'''
-
+	if len(matchList)<2:
+		return tr
 	shortTrack=3
 	#Match the indices of the link candidates
 	matchL=matchIndices(matchList.take([0,1,3],axis=1),'Distance')
