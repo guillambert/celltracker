@@ -347,7 +347,7 @@ def avgCellInt(rawImg,bwImg):
 	bwImg0=np.uint8(bwImg.copy())
 	bw=np.zeros(bwImg0.shape)
 	
-	csa,_ = cv.findContours(bwImg.copy(), 
+	csa,_ = cv.findContours(bwImg0, 
 				mode=cv.RETR_TREE, 
 				method=cv.CHAIN_APPROX_SIMPLE)
 	numC=int(len(csa))
@@ -779,9 +779,8 @@ def trackCells(fPath,lnoise=1,lobject=8,thres=3):
                         avgCellI=avgCellInt(img.copy(),bwImg.copy())
                         if np.isnan(avgCellI).any():
                                 avgCellI[np.isnan(avgCellI)]=0
-			
 #			avgCellI=np.zeros((len(regionP),1))
-			regionP=np.hstack([regionP,avgCellI])
+			regionP=np.hstack([regionP,avgCellI[1:]])
 			if (fileNum-fileNum0)==1:
 				areaList=labelOverlap(bwL0,bwL)
 				AA.append(areaList)			
