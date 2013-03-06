@@ -776,9 +776,12 @@ def trackCells(fPath,lnoise=1,lobject=8,thres=3):
 		fileNum=int(re.findall(r'\d+',fname)[0])
 		if bwL.max()>5:
 			regionP=regionprops(bwImg,scaleFact)
-			#avgCellI=avgCellInt(img.copy(),bwImg)
-			avgCellI=np.zeros((len(regionP),1))
-			regionP=np.hstack([regionP,0*avgCellI])
+                        avgCellI=avgCellInt(img.copy(),bwImg.copy())
+                        if np.isnan(avgCellI).any():
+                                avgCellI[np.isnan(avgCellI)]=0
+			
+#			avgCellI=np.zeros((len(regionP),1))
+			regionP=np.hstack([regionP,avgCellI])
 			if (fileNum-fileNum0)==1:
 				areaList=labelOverlap(bwL0,bwL)
 				AA.append(areaList)			
@@ -1148,12 +1151,14 @@ def findDivs(L):
 	if len(L)>win_size:
 		std_thres=0.15
 		#Remove the points with a large positive derivative, do this twice
-		jumpID=(np.diff(L)>divJumpSize).nonzero()[0]
-		L[jumpID+1]=L[jumpID]
-		
-		jumpID=(np.diff(L)>divJumpSize).nonzero()[0]
-		L[jumpID+1]=L[jumpID]
-		
+		Lup=removePeaks(L.copy(),'Up')	
+		Ldown=removePeaks(L.copy(),'Down')
+
+		if np.sum(np.diff(Lup)**2)<np.sum(np.diff(Ldown)**2):	
+			L=Lup.copy()
+		elif np.sum(np.diff(Lup)**2)>np.sum(np.diff(Ldown)**2):
+			L=Ldown.copy()
+		L=Ldown.copy()
 		Lw=rolling_window(L,win_size)
 		Lstd=np.std(Lw,-1)/np.mean(Lw,-1)
 		Li=(Lstd>std_thres)
@@ -1183,10 +1188,11 @@ def findDivs(L):
 		#Check if length is higher later
 		for i in range(len(divTimes)):
 			divs=divTimes[i]
-			if L[divs:(divs+10)].max()>L[divs]:
+			if L[divs:(divs+3)].max()>L[divs]:
 				divTimes[i]=0
+	divTimes=divLoc[0]
 	divTimes=divTimes[divTimes!=0]
-	divTimes=divTimes[divTimes>10]	
+	divTimes=divTimes[divTimes>3]	
 	return divTimes
 
 
@@ -1261,25 +1267,64 @@ def peakdet(v, delta, x = None):
 
     return array(maxtab), array(mintab)
 
-def removePeaks(LL):
+def removePeaks(LL,mode='Down'):
+	divJumpSize=10
 
-	alist,blist=peakdet(LL,15)
-	for pt in aList:
-		Lmean=(LL[pt[0]-1]+LL[pt[0]+1])/2.
-		Lplus=(LL[pt[0]]-LL[pt[0]-1])
-		Lminus=(LL[pt[0]]-LL[pt[0]+1])
+	#Find location of sudden jumps (up or down)
+	jumpIDup=(np.diff(LL)>divJumpSize).nonzero()[0]
+	jumpIDdown=(np.diff(LL)<-divJumpSize).nonzero()[0]
 
-		print (abs(Lplus)-abs(Lminus))
-		if (abs(Lplus)-abs(Lminus))<15:
-			LL[pt[0]]=Lmean
-	for pt in bList:
-		Lmean=(LL[pt[0]-1]+LL[pt[0]+1])/2.
-		Lplus=(LL[pt[0]]-LL[pt[0]-1])
-		Lminus=(LL[pt[0]]-LL[pt[0]+1])
 
-		print (abs(Lplus)-abs(Lminus))
-		if (abs(Lplus)-abs(Lminus))<15:
-			LL[pt[0]]=Lmean
+	if mode=='Down':	
+		for id in jumpIDdown:
+			if ((id-jumpIDup)==-1).nonzero()[0].size:
+				LL[id+1]=(LL[id]+LL[id+2])/2.
+			elif ((id-jumpIDup)==-2).nonzero()[0].size:
+				LL[id+1]=2*LL[id]/3.+LL[id+3]/3. 
+				LL[id+2]=LL[id]/3.+2*LL[id+3]/3. 	
+			elif ((id-jumpIDup)==-3).nonzero()[0].size:
+				LL[id+1]=3*LL[id]/4.+LL[id+4]/4.
+				LL[id+2]=LL[id]/2.+LL[id+4]/2.
+				LL[id+3]=LL[id]/4.+3*LL[id+4]/4.
+		jumpIDup=(np.diff(LL)>divJumpSize).nonzero()[0]
+		jumpIDdown=(np.diff(LL)<-divJumpSize).nonzero()[0]
+	
+                for id in jumpIDdown:
+                       if ((id-jumpIDup)==1).nonzero()[0].size:
+        	               LL[id]=(LL[id-1]+LL[id+1])/2.
+                       elif ((id-jumpIDup)==2).nonzero()[0].size:
+                               LL[id-1]=2*LL[id-2]/3.+LL[id+1]/3.      
+                               LL[id]=LL[id-2]/3.+2*LL[id+1]/3.        
+                       elif ((id-jumpIDup)==3).nonzero()[0].size:
+                               LL[id-2]=3*LL[id-3]/4.+LL[id+1]/4.
+                               LL[id-1]=LL[id-3]/2.+LL[id+1]/2.
+                               LL[id]=LL[id-3]/4.+3*LL[id+1]/4.
+
+	elif mode=='Up':
+		for id in jumpIDup:
+			if ((id-jumpIDdown)==-1).nonzero()[0].size:
+				LL[id+1]=(LL[id]+LL[id+2])/2.
+			elif ((id-jumpIDdown)==-2).nonzero()[0].size:
+				LL[id+1]=2*LL[id]/3.+LL[id+3]/3.
+				LL[id+2]=LL[id]/3.+2*LL[id+3]/3.
+                        elif ((id-jumpIDdown)==-3).nonzero()[0].size:
+                                LL[id+1]=3*LL[id]/4.+LL[id+4]/4.
+                                LL[id+2]=LL[id]/2.+LL[id+4]/2.
+                                LL[id+3]=LL[id]/4.+3*LL[id+4]/4.
+                jumpIDup=(np.diff(LL)>divJumpSize).nonzero()[0]
+                jumpIDdown=(np.diff(LL)<-divJumpSize).nonzero()[0]
+        
+                for id in jumpIDup:
+                       if ((id-jumpIDdown)==1).nonzero()[0].size:
+                               LL[id]=(LL[id-1]+LL[id+1])/2.
+                       elif ((id-jumpIDdown)==2).nonzero()[0].size:
+                               LL[id-1]=2*LL[id-2]/3.+LL[id+1]/3.      
+                               LL[id]=LL[id-2]/3.+2*LL[id+1]/3.        
+                       elif ((id-jumpIDdown)==3).nonzero()[0].size:
+                               LL[id-2]=3*LL[id-3]/4.+LL[id+1]/4.
+                               LL[id-1]=LL[id-3]/2.+LL[id+1]/2.
+                               LL[id]=LL[id-3]/4.+3*LL[id+1]/4.
+
 	return LL
 	
 
