@@ -899,6 +899,9 @@ def processTracks(trIn):
 	print "Compute elongation rate"	
 	tr=addElongationRate(tr)
 
+	print "Smoothing Length"
+	tr=smoothLength(tr)
+
 	return tr
 
 def getBoundingBox(param,dist=1):
@@ -1616,6 +1619,21 @@ def addElongationRate(trIn):
 
 	return trIn
 
+def smoothLength(trIn):
+	'''
+	Goes through each track and applies a removePeaks to the length
+	'''
+	
+	trI=splitIntoList(trIn,3)
+
+	for id in range(len(trI)):
+		dT=trI[id]
+		if len(dT):
+			trI[id][:,4]=removePeaks(dT[:,4],'Down')
+
+	trOut=revertListIntoArray(trI)
+	return trOut
+	
 
 '''
 def computeOpticalFlow:
