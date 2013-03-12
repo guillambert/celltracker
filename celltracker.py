@@ -713,7 +713,7 @@ def processImage(imgIn,scaleFact=1,sBlur=0.5,sAmount=0,lnoise=1,
 def preProcessCyano(brightImg,chlorophyllImg):
 	'''
 	Pre-process the Chlorophyll and brightfield images so that they can be
-	analyzed with processImages
+	segmented directly.
 	''' 
 	solidThres=0.75
 	cellMask = cv.dilate(np.uint8(bpass(chlorophyllImg,1,10)>10),None,iterations=15)
@@ -1189,7 +1189,7 @@ def findDivs(L):
 			divs=divTimes[i]
 			if L[divs:(divs+3)].max()>L[divs]:
 				divTimes[i]=0
-	divTimes=divLoc[0]
+	divTimes=divLoc[0]+1.
 	divTimes=divTimes[divTimes!=0]
 	divTimes=divTimes[divTimes>3]	
 	return divTimes
@@ -1266,9 +1266,9 @@ def peakdet(v, delta, x = None):
 
     return array(maxtab), array(mintab)
 
-def removePeaks(LL,mode='Down'):
+def removePeaks(Lin,mode='Down'):
 	divJumpSize=10
-
+	LL=Lin.copy()
 	#Find location of sudden jumps (up or down)
 	jumpIDup=(np.diff(LL)>divJumpSize).nonzero()[0]
 	jumpIDdown=(np.diff(LL)<-divJumpSize).nonzero()[0]
