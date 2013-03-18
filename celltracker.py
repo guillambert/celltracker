@@ -635,32 +635,36 @@ def putLabelOnImg(fPath,tr,dataRange,dim):
         for file in fileList:
                 if file.endswith('tif'):
                         tifList.append(file)
-	if not dataRange:
+	if not len(dataRange):
 		dataRange=range(len(tifList))
 	for t in dataRange:
 		time_start=time.time()
-		fname = tifList[t] 
-		print fPath+fname
-                img=cv.imread(fPath+fname,-1)
-                img=cv.transpose(img)
-		bwImg=processImage(img,scaleFact=1,sBlur=0.5,
+		if tifList:
+			fname = tifList[t] 
+			print fPath+fname
+	                img=cv.imread(fPath+fname,-1)
+	                img=cv.transpose(img)
+			bwImg=processImage(img,scaleFact=1,sBlur=0.5,
 				   sAmount=0,lnoise=1,lobject=8,
 				   thres=2,solidThres=0.65,
 				   lengthThres=1.5,widthThres=20)
-		plt.imshow(bwImg)
+			plt.imshow(bwImg)
 		plt.hold(True)
 		trT=trTime[t]
-		for cell in range(len(trT[:,3])):
-			'''plt.text(trT[cell,0],trT[cell,1],
-			            str(trT[cell,dim])+', '+str(trT[cell,3]),
-				    color='w',fontsize=6)
-			'''
-			plt.text(trT[cell,0],trT[cell,1],
-				 str(trT[cell,dim]),color='w',fontsize=10)
-			boxPts=getBoundingBox(trT[cell,:])
-			plt.plot(boxPts[:,0],boxPts[:,1],'w')
+		if np.size(trT)>1:
+			for cell in range(len(trT[:,3])):
+				'''plt.text(trT[cell,0],trT[cell,1],
+				            str(trT[cell,dim])+', '+str(trT[cell,3]),
+					    color='w',fontsize=6)
+				'''
+				plt.text(trT[cell,0],trT[cell,1],
+					 str(trT[cell,dim]),color='k',fontsize=5)
+				boxPts=getBoundingBox(trT[cell,:])
+				plt.plot(boxPts[:,0],boxPts[:,1],'k')
 		plt.title(str(t))
 		plt.hold(False)
+		plt.xlim((0,800))
+		plt.ylim((0,220))
 		#plt.savefig(fPath+"Fig"+str(t)+".jpg",dpi=(120))
 		plt.show()
 		plt.draw()
@@ -887,20 +891,21 @@ def processTracks(trIn):
 	tr=findFamilyID(tr)
 	
 	print "match family IDs"
-	tr=matchFamilies(tr)	
-	tr=matchFamilies(tr)	
+	#tr=matchFamilies(tr)	
+	#tr=matchFamilies(tr)	
 
 	print "fix family IDs"
-	tr=fixFamilies(tr)	
+	#tr=fixFamilies(tr)	
 
 	print "Adding cell Age"
 	tr=addCellAge(tr)
 	
+	print "Smoothing Length"
+	tr=smoothLength(tr)
+	
 	print "Compute elongation rate"	
 	tr=addElongationRate(tr)
 
-	print "Smoothing Length"
-	tr=smoothLength(tr)
 
 	return tr
 
@@ -1002,7 +1007,7 @@ def removeShortTracks(tr,shortTrack=3):
 	tr=removeShortTracks(tr,shortTrack=3) removes 
 	tracks shorter than shortTrack
 	'''
-	trLength=mp.pyplot.hist(tr[:,3],np.unique(tr[:,3]))
+	trLength=mp.pyplot.histogram(tr[:,3],np.unique(tr[:,3]))
         idLong=trLength[1][trLength[0]>shortTrack]
         k=0
         #Reassign cell ID
@@ -1058,7 +1063,7 @@ def matchTracks(inList1,inList2,dist,timeRange):
 			VC=eucledianDistances(np.array([pts[0:2]]),inPts[:,0:2])	
 			VC=VC[0]
 
-			T=5*np.hypot(0,pts[3]-inPts[:,3])
+			T=5*np.hypot(0,pts[2]-inPts[:,2])
 			#Put the possible candidates into an array		
 			
 			for id in range(len(VL)):
@@ -1270,7 +1275,7 @@ def peakdet(v, delta, x = None):
     return array(maxtab), array(mintab)
 
 def removePeaks(Lin,mode='Down'):
-	divJumpSize=10
+	divJumpSize=20
 	LL=Lin.copy()
 	#Find location of sudden jumps (up or down)
 	jumpIDup=(np.diff(LL)>divJumpSize).nonzero()[0]
@@ -1344,20 +1349,23 @@ def assignDaughter(trIn,dist=2,timeRange=[4,6]):
 	'''
 
 	'''
+	timeS=time.time()
 	divData=findDivisionEvents(trIn)	
 		
 	m=np.zeros((len(divData),8))
 	k=0
 	#Extract the track information at every division events
+	trI=splitIntoList(trIn,3)
 	for pt in divData:
-		mt=trIn[(trIn[:,3]==pt[0])&(trIn[:,2]==pt[1]),:]
-		m[k,:]=mt[0]
+		dT=trI[int(pt[0])].copy()
+		dT=dT[abs(dT[:,2]-pt[1])<3,:]
+		dT=dT[(dT[:,4]==np.max(dT[:,4])),:]	#consider cell before division.
+		dT[0][2]=pt[1]
+		m[k,:]=dT[0]
     		k=k+1		
-	
 	#Find the closest cells to every division events.	
 	masterStartList=trIn[np.roll(np.diff(trIn[:,3])>0,1),:]
 	
-	#daughterMatchList=matchTracks(m,masterStartList,3)
 	daughterMatchList=matchTracks(m,masterStartList,dist,timeRange)
 	#Create an array containing [motherID, daughterID, time]	
 	matchL=np.zeros((1,3))
@@ -1369,48 +1377,90 @@ def assignDaughter(trIn,dist=2,timeRange=[4,6]):
 			matchL=np.append(matchL,ml,0)
 			for id in ml[:,1]:
 				daughterMatchList=daughterMatchList[daughterMatchList[:,1]!=id,:]
-#	return matchL
 	#Add a new column to trIn. Put in this column the ID of the daughter cell.
 	#Also, put the ID of the mother	
 #	print matchL
 	trIn=np.hstack([trIn,np.zeros((len(trIn),1))])
+	trI=splitIntoList(trIn,3)
 	for k in reversed(range(len(matchL)-1)):
 		div=matchL[k+1,:]
 			
-		trIn[(trIn[:,2]==div[2])&(trIn[:,3]==div[0]),8]=div[1]
-		birthTime=trIn[trIn[:,3]==div[1],2]
-		birthID=(trIn[:,3]==div[1]).nonzero()
-		trIn[birthID[0][0],8]=-div[0]
-		trIn=relabelCells(trIn,div)	
+		trI[int(div[0])][trI[int(div[0])][:,2]==div[2],8]=div[1]
+		
+		birthTime=trI[int(div[1])][:,2]
+
+		
+		trI[int(div[1])][0,8]=-div[0]
+	
+		#trI=relabelCells(trI,div)
+	trIn=revertListIntoArray(trI)	
 	trIn=trIn[trIn[:,2].argsort(-1,'mergesort'),]
 	trIn=trIn[trIn[:,3].argsort(-1,'mergesort'),]
+	
 	
 	return trIn
 
 		
-def relabelCells(tr,div):
+def relabelCells(trR,div):
+	'''
+	Not working.
+	'''
 	#Relabel mother and daughter cells so that the mother is always on the 'left'
+	divisionEvents=(trR[:,8]>0).nonzero()[0]	
+
+	trRI=splitIntoList(trR,3)
+
+	for loc in reversed(divisionEvents):
+		motherID=trR[loc,3]
+		daughterID=trT[loc,8]
+		divisionTime=trT[loc,2]
+
+		motherX=trRI[int(motherID)][trRI[int(motherID)][:,2]>(divisionTime+1),0]
+
+		daughterX==trRI[int(daughterID)][trRI[int(daughterID)][:,2]>(divisionTime+2),0]
+
+		if motherX.any()&daughterX.any():
+			if motherX[0]>daughterX[0]:
+				motherArr=(trR[:,3]==motherID)&(trR[:,2]>divisionTime)
+				daughterArr=(trR[:,3]==daughterID)&(trR[:,2]>divisionTime)
+
+				motherDivs=(trR[:,2]>divisionTime)&(trR[:,8]==-motherID)
+				daughterDivs=(trR[:,2]>divisionTime)&(trR[:,8]==-motherID)
+
+				tr[motherArr,3]=daughterID	
+				tr[daughterArr,3]=motherID
+
+	
 	motherID=div[0]
 	daughterID=div[1]
 	divisionTime=div[2]
-	motherDivLoc=tr[(tr[:,3]==motherID)&(tr[:,2]>(divisionTime+2)),0]		
-	daughterDivLoc=tr[(tr[:,3]==daughterID)&(tr[:,2]>(divisionTime+2)),0]		
+#	motherDivLoc=tr[(tr[:,3]==motherID)&(tr[:,2]>(divisionTime+2)),0]		
+	motherDivLoc=trR[int(motherID)][trR[int(motherID)][:,2]>(divisionTime+1),0]
+
+#	daughterDivLoc=tr[(tr[:,3]==daughterID)&(tr[:,2]>(divisionTime+2)),0]		
+	daughterDivLoc=trR[int(daughterID)][trR[int(daughterID)][:,2]>(divisionTime+2),0]
+
+
 
 	if motherDivLoc.any()&daughterDivLoc.any():
 		if motherDivLoc[0]>daughterDivLoc[0]:
-			motherArr=(tr[:,3]==motherID)&(tr[:,2]>divisionTime)		
+#			motherArr=(tr[:,3]==motherID)&(tr[:,2]>divisionTime)		
 	
-			daughterArr=(tr[:,3]==daughterID)&(tr[:,2]>divisionTime)
-
-			tr[motherArr,3]=daughterID
-			tr[daughterArr,3]=motherID
+#			daughterArr=(tr[:,3]==daughterID)&(tr[:,2]>divisionTime)
 			
-		daughterArrRem=(tr[:,3]==daughterID)&(tr[:,2]<=divisionTime)		
-		if np.sum(daughterArrRem)>0:
-			tr=tr[np.invert(daughterArrRem),:]
+#			tr[motherArr,3]=daughterID
+			trR[int(motherID)][trR[int(motherID)][:,2]>divisionTime,3]=daughterID	
+
+#			tr[daughterArr,3]=motherID
+			trR[int(daughterID)][trR[int(daughterID)][:,2]>divisionTime,3]=motherID		
+	
+		#daughterArrRem=(tr[:,3]==daughterID)&(tr[:,2]<=divisionTime)		
+		trR[int(daughterID)]=trR[int(daughterID)][np.invert(trR[int(daughterID)][:,2]<=divisionTime),:]		
+		#if np.sum(daughterArrRem)>0:
+		#	tr=tr[np.invert(daughterArrRem),:]
 	
 
-	return tr
+	return trR
 
 def renameTracks(trIn):
 	'''
