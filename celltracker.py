@@ -1007,7 +1007,7 @@ def removeShortTracks(tr,shortTrack=3):
 	tr=removeShortTracks(tr,shortTrack=3) removes 
 	tracks shorter than shortTrack
 	'''
-	trLength=mp.pyplot.histogram(tr[:,3],np.unique(tr[:,3]))
+	trLength=np.histogram(tr[:,3],np.unique(tr[:,3]))
         idLong=trLength[1][trLength[0]>shortTrack]
         k=0
         #Reassign cell ID
