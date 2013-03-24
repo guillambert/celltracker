@@ -310,12 +310,13 @@ def floodFill(imgIn,seedPt,pixelValue):
 	This script perform a flood fill, starting from seedPt.
 	'''
 	labelledImg=bwlabel(imgIn)
-	regionID=imgIn[seedPt[0],seedPt[1]]
 
-	bwImg=imgIn.copy()
-	bwImg[labelledImg==regionID]=pixelValue		
+	regionID=labelledImg[seedPt[0],seedPt[1]]
 
-	return bwImg
+	bwImg0=imgIn.copy()
+	bwImg0[labelledImg==regionID]=pixelValue		
+
+	return bwImg0
 
 def drawConvexHull(bwImg):
 	        #Import relevant modules
@@ -651,21 +652,28 @@ def putLabelOnImg(fPath,tr,dataRange,dim):
 			plt.imshow(bwImg)
 		plt.hold(True)
 		trT=trTime[t]
+		bwI=np.double(bwImg.copy())
 		if np.size(trT)>1:
 			for cell in range(len(trT[:,3])):
 				'''plt.text(trT[cell,0],trT[cell,1],
 				            str(trT[cell,dim])+', '+str(trT[cell,3]),
 					    color='w',fontsize=6)
 				'''
-				plt.text(trT[cell,0],trT[cell,1],
-					 str(trT[cell,dim]),color='k',fontsize=5)
-				boxPts=getBoundingBox(trT[cell,:])
-				plt.plot(boxPts[:,0],boxPts[:,1],'k')
+#				plt.text(trT[cell,0],trT[cell,1],
+#					 str(trT[cell,dim]),color='k',fontsize=5)
+#				boxPts=getBoundingBox(trT[cell,:])
+#				plt.plot(boxPts[:,0],boxPts[:,1],'k')
+				if bwI[np.floor(trT[cell,1]),np.floor(trT[cell,0])]>0:
+					bwI=floodFill(bwI.copy(),(trT[cell,1],trT[cell,0]),trT[cell,9])
+		plt.imshow(bwI)
+		plt.clim((0,30))
 		plt.title(str(t))
 		plt.hold(False)
 		plt.xlim((0,800))
 		plt.ylim((0,220))
-		#plt.savefig(fPath+"Fig"+str(t)+".jpg",dpi=(120))
+		
+#		cv.imwrite(fPath+'Fig'+str(t)+'.jpg',np.uint8(bwI))
+		plt.savefig(fPath+"Fig"+str(t)+".png",dpi=(120))
 		plt.show()
 		plt.draw()
 		plt.clf()	
@@ -1275,7 +1283,7 @@ def peakdet(v, delta, x = None):
     return array(maxtab), array(mintab)
 
 def removePeaks(Lin,mode='Down'):
-	divJumpSize=20
+	divJumpSize=15
 	LL=Lin.copy()
 	#Find location of sudden jumps (up or down)
 	jumpIDup=(np.diff(LL)>divJumpSize).nonzero()[0]
@@ -1828,7 +1836,7 @@ if __name__ == "__main__":
 		SAVEPATH=(raw_input('Please enter the location where the analyzed files will be saved (leave empty to use current location) ') or './')
 	else:
 		FILEPATH='./'
-		PROCESSFILES='yes'
+		PROCESSFILES='no'
 		LINKTRACKS='yes'
 		PROCESSTRACKS='yes'
 		SAVEPATH='./'
