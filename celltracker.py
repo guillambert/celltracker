@@ -160,6 +160,7 @@ def bpass(img,lnoise,lobject):
 	lnoise=np.double(lnoise)
 	lobject=np.double(lobject)
 	image_array=np.double(img)  #Convert the input image to double
+	
 	#Create the gaussian and boxcar kernels
 	gauss_kernel_range=np.arange((-5*lnoise),(5*lnoise))/(2*lnoise)
 	gauss_kernel=anormalize(np.exp(-np.power(gauss_kernel_range,2)))
@@ -175,7 +176,7 @@ def bpass(img,lnoise,lobject):
 	#Remove the values lower than zero
 	filtered[filtered<0]=0
 	#Output the final image
-	imgOut=filtered
+	imgOut=filtered.copy()
 	return imgOut
 
 def unsharp(img,sigma=5,amount=10):
@@ -755,7 +756,7 @@ def trackCells(fPath,lnoise=1,lobject=8,thres=3):
 	processes the files in fPath.
 	'''
 	#Initialize variables
-	sBlur=0.5
+	sBlur=0
 	sAmount=0
 	bPassNum=1
 	scaleFact=1
@@ -1744,7 +1745,7 @@ def optimizeParameters(fPath,num):
 		print 'Please examine the resulting image, close it when done'	
 		img=cv.imread(fPath+tifList[num],-1)
 		img=cv.transpose(img)
-		bwImg=processImage(img,scaleFact=1,sBlur=0.5,sAmount=0,
+		bwImg=processImage(img,scaleFact=1,sBlur=0,sAmount=0,
 				   lnoise=lnoise0,lobject=lobject0,
 				   thres=np.double(thres0),solidThres=0.65,
 				   lengthThres=1.5)
