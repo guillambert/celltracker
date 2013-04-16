@@ -749,11 +749,13 @@ def preProcessCyano(brightImg,chlorophyllImg):
 
 	return np.uint8(imgOut)
 
-def trackCells(fPath,lnoise=1,lobject=8,thres=3):
+def trackCells(fPath,lnoise=1,lobject=8,thres=3,lims=0,maxFiles=0):
 	'''
 	This prepares the data necessary to track the cells.
-	masterL,LL,AA=trackCells(fPath,lnoise=1,lobject=8,thres=5)
+	masterL,LL,AA=trackCells(fPath,lnoise=1,lobject=8,thres=5,lims=0)
 	processes the files in fPath.
+	
+	lims is a Nx2 list containing the limits of each subregions.
 	'''
 	#Initialize variables
 	sBlur=0
@@ -774,36 +776,55 @@ def trackCells(fPath,lnoise=1,lobject=8,thres=3):
 		if file.endswith('tif'):
 			tifList.append(file)
 	k=0
+	if maxFiles>0:
+		tifList=tifList[:maxFiles]
 	kmax=len(tifList)
 	startProgress('Analyzing files:')
+	regionP=list(range(len(lims)))
+	areaList=list(range(len(lims)))
+	linkList=list(range(len(lims)))
+	masterList=list(range(len(lims)))
+	AA=list(range(len(lims)))
+	LL=list(range(len(lims)))
+	imgCropped=list(range(len(lims)))
+	bwImg=list(range(len(lims)))
+	bwL=list(range(len(lims)))
+	bwL0=list(range(len(lims)))
 	for fname in np.transpose(tifList):
 #		print(fPath+fname)
 		k=k+1
 		progress(np.double(k)/np.double(kmax))
 		img=cv.imread(fPath+fname,-1)
 		img=cv.transpose(img)
-		bwImg=processImage(img,scaleFact,sBlur,
-				   sAmount,lnoise,lobject,
-				   thres,solidThres,lengthThres)
-		bwL=bwlabel(bwImg)
-		fileNum=int(re.findall(r'\d+',fname)[0])
-		if bwL.max()>5:
-			regionP=regionprops(bwImg,scaleFact)
-                        avgCellI=avgCellInt(img.copy(),bwImg.copy())
-                        if np.isnan(avgCellI).any():
-                                avgCellI[np.isnan(avgCellI)]=0
-#			avgCellI=np.zeros((len(regionP),1))
-			regionP=np.hstack([regionP,avgCellI[1:]])
-			if (fileNum-fileNum0)==1:
-				areaList=labelOverlap(bwL0,bwL)
-				AA.append(areaList)			
-				linkList=matchIndices(areaList,'Area')
-				LL.append(linkList)		
-			#Extract regionprops
-			masterList.append(regionP)
-			bwL0=bwL.copy()
+		for id in range(len(lims)):
+			imgCropped[id]=img[lims[id,0]:lims[id,1],:]
+			bwImg[id]=processImage(imgCropped[id],scaleFact,sBlur,
+					   sAmount,lnoise,lobject,
+					   thres,solidThres,lengthThres)
+			bwL[id]=bwlabel(bwImg[id])
+			fileNum=int(re.findall(r'\d+',fname)[0])
+			if bwL[id].max()>5:
+				
+				regionP[id]=regionprops(bwImg[id],scaleFact)
+				avgCellI=avgCellInt(imgCropped[id].copy(),bwImg[id].copy())
+				if np.isnan(avgCellI).any():
+					avgCellI[np.isnan(avgCellI)]=0
+				regionP[id]=np.hstack([regionP[id],avgCellI[1:]])
+				if (fileNum-fileNum0)==1:
+					areaList[id]=labelOverlap(bwL0[id],bwL[id])
+					AA[id].append(areaList[id])			
+					linkList[id]=matchIndices(areaList[id],'Area')
+					LL[id].append(linkList[id])		
+				#Extract regionprops
+				if fileNum0==0:
+					masterList[id]=[regionP[id]]
+					AA[id]=[]
+					LL[id]=[]
+				else:
+					masterList[id].append(regionP[id])
+				bwL0[id]=bwL[id].copy()
 
-		fileNum0=fileNum
+		fileNum0=fileNum+0
 	endProgress()
 	return masterList,LL,AA
 
@@ -1379,13 +1400,15 @@ def assignDaughter(trIn,dist=2,timeRange=[4,6]):
 	#Create an array containing [motherID, daughterID, time]	
 	matchL=np.zeros((1,3))
 	for t in np.unique(daughterMatchList[:,2]):
-		mt=daughterMatchList[daughterMatchList[:,2]==t,:]
+		if len(daughterMatchList):
+			mt=daughterMatchList[daughterMatchList[:,2]==t,:]
 		if mt.any():
 			ml=matchIndices(mt.take([0,1,3],axis=1),'Distance')		
 			ml[:,2]=t
 			matchL=np.append(matchL,ml,0)
 			for id in ml[:,1]:
-				daughterMatchList=daughterMatchList[daughterMatchList[:,1]!=id,:]
+				if len(daughterMatchList):
+					daughterMatchList=daughterMatchList[daughterMatchList[:,1]!=id,:]
 	#Add a new column to trIn. Put in this column the ID of the daughter cell.
 	#Also, put the ID of the mother	
 #	print matchL
@@ -1770,6 +1793,45 @@ def optimizeParameters(fPath,num):
 
 	return lnoise0,lobject0,thres0	
 
+def splitRegions(fPath,numberOfRegions):
+	"""
+	Performs a kmeans analysis to identify each regions. 
+	"""
+	import random as rnd
+	import scipy.cluster.vq as vq
+	lnoise0=1
+	lobject0=8
+	thres0=2
+	tifList=[]
+	fileList=sort_nicely(os.listdir(fPath))
+	for file in fileList:
+		if file.endswith('tif'):
+			tifList.append(file)
+	num=rnd.randint(1,int(len(tifList)/10.))
+	print num
+	img=cv.imread(fPath+tifList[num],-1)
+	img=cv.transpose(img)
+	bwImg=processImage(img,scaleFact=1,sBlur=0,sAmount=0,
+			   lnoise=lnoise0,lobject=lobject0,
+			   thres=np.double(thres0),solidThres=0.65,
+			   lengthThres=1.5)
+	posList=regionprops(bwImg)[:,0:2]
+	wPosList=vq.whiten(posList)
+
+	idList=vq.kmeans2(wPosList[:,1],numberOfRegions)	
+	x=np.zeros((numberOfRegions,))
+	for id in range(numberOfRegions):
+		x[id]=np.mean(posList[idList[1]==id,1])	
+
+	x=np.sort(x)
+	xLimits=np.array([x[0]/2,(x[0]+x[1])/2])
+	for id in range(1,numberOfRegions-1,1):
+		xLimits=np.vstack((xLimits,np.array([(x[id-1]+x[id])/2,(x[id]+x[id+1])/2])))
+	
+	xLimits=np.vstack((xLimits,np.array([(x[id]+x[id+1])/2,(x[-1]+img.shape[0])/2])))
+	
+	return xLimits.astype(np.int)
+
 def saveListOfArrays(fname,listData):
 	'''
 	Save a list of different length arrays (but same width) as a single array
@@ -1831,6 +1893,12 @@ if __name__ == "__main__":
 			OPTIMIZEPROCESSING=raw_input('Do you want to optimize the image processing parameters? (yes or no) ')
 			if OPTIMIZEPROCESSING=='yes':
 				lnoise,lobject,thres=optimizeParameters(FILEPATH,0)
+		MULTIPLEREGIONS=raw_input('Are there multiple disjointed regions in each image? (yes or no) ')
+		if MULTIPLEREGIONS=='yes':
+			NUMBEROFREGIONS=int(raw_input('How many regions per field of view? (Enter a number) '))
+		else:
+			NUMBEROFREGIONS=1
+		LIMITFILES=raw_input('Enter the number of files to analyze (leave empty for all) ' or 0)
 		LINKTRACKS=raw_input('Do you want to link the cell tracks? (yes or no) ')
 		if LINKTRACKS=='yes':
 			PROCESSTRACKS=raw_input('Do you want to analyze the cell tracks? (yes or no) ')
@@ -1844,19 +1912,24 @@ if __name__ == "__main__":
 
 	np.savez(SAVEPATH+'processFiles.npz',lnoise=lnoise,lobject=lobject,thres=thres)
 
+	if MULTIPLEREGIONS=='yes':
+		lims=splitRegions(FILEPATH,NUMBEROFREGIONS)
+		print lims
 	if PROCESSFILES=='yes':
-		masterL,LL,AA=trackCells(FILEPATH,np.double(lnoise),np.double(lobject),np.double(thres))
-		saveListOfArrays(SAVEPATH+'masterL.npz',masterL)
-		saveListOfArrays(SAVEPATH+'LL.npz',LL)
+		masterL,LL,AA=trackCells(FILEPATH,np.double(lnoise),np.double(lobject),np.double(thres),lims,int(LIMITFILES))
+		for id in range(NUMBEROFREGIONS):
+			saveListOfArrays(SAVEPATH+'masterL_'+str(id)+'.npz',masterL[id])
+			saveListOfArrays(SAVEPATH+'LL_'+str(id)+'.npz',LL[id])
 
 	if LINKTRACKS=='yes':
-		masterL=loadListOfArrays(SAVEPATH+'masterL.npz')
-		LL=loadListOfArrays(SAVEPATH+'LL.npz')
-		tr=linkTracks(masterL,LL)
-		if PROCESSTRACKS=='yes':
-			tr=processTracks(tr)
-		with open(SAVEPATH+'/trData.dat', 'wb') as f:	
-			f.write(b'# xPos yPos time cellID cellLength cellWidth cellAngle avgIntensity divisionEvents familyID cellAge elongationRate\n')
-			np.savetxt(f,tr)
-			print 'The analysis is complete. Data saved as '+SAVEPATH+'trData.dat'	
+		for id in range(NUMBEROFREGIONS):
+			masterL=loadListOfArrays(SAVEPATH+'masterL_'+str(id)+'.npz')
+			LL=loadListOfArrays(SAVEPATH+'LL_'+str(id)+'.npz')
+			tr=linkTracks(masterL,LL)
+			if PROCESSTRACKS=='yes':
+				tr=processTracks(tr)
+			with open(SAVEPATH+'/trData_'+str(id)+'.dat', 'wb') as f:	
+				f.write(b'# xPos yPos time cellID cellLength cellWidth cellAngle avgIntensity divisionEvents familyID cellAge elongationRate\n')
+				np.savetxt(f,tr)
+			print 'The analysis of region '+str(id)+' is complete. Data saved as '+SAVEPATH+'trData_'+str(id)+'.dat'	
 		
