@@ -651,30 +651,30 @@ def putLabelOnImg(fPath,tr,dataRange,dim):
 				   thres=2,solidThres=0.65,
 				   lengthThres=1.5,widthThres=20)
 			plt.imshow(bwImg)
+			bwI=np.double(bwImg.copy())
 		plt.hold(True)
 		trT=trTime[t]
-		bwI=np.double(bwImg.copy())
 		if np.size(trT)>1:
 			for cell in range(len(trT[:,3])):
 				'''plt.text(trT[cell,0],trT[cell,1],
 				            str(trT[cell,dim])+', '+str(trT[cell,3]),
 					    color='w',fontsize=6)
 				'''
-#				plt.text(trT[cell,0],trT[cell,1],
-#					 str(trT[cell,dim]),color='k',fontsize=5)
-#				boxPts=getBoundingBox(trT[cell,:])
-#				plt.plot(boxPts[:,0],boxPts[:,1],'k')
-				if bwI[np.floor(trT[cell,1]),np.floor(trT[cell,0])]>0:
-					bwI=floodFill(bwI.copy(),(trT[cell,1],trT[cell,0]),trT[cell,9])
-		plt.imshow(bwI)
-		plt.clim((0,30))
+				plt.text(trT[cell,0],trT[cell,1],
+					 str(trT[cell,dim]),color='k',fontsize=5)
+				boxPts=getBoundingBox(trT[cell,:])
+				plt.plot(boxPts[:,0],boxPts[:,1],'k')
+#				if bwI[np.floor(trT[cell,1]),np.floor(trT[cell,0])]>0:
+#					bwI=floodFill(bwI.copy(),(trT[cell,1],trT[cell,0]),trT[cell,9])
+#		plt.imshow(bwI)
+#		plt.clim((0,30))
 		plt.title(str(t))
 		plt.hold(False)
-		plt.xlim((0,800))
-		plt.ylim((0,220))
+		plt.xlim((0,1200))
+		plt.ylim((0,1200))
 		
 #		cv.imwrite(fPath+'Fig'+str(t)+'.jpg',np.uint8(bwI))
-		plt.savefig(fPath+"Fig"+str(t)+".png",dpi=(120))
+#		plt.savefig(fPath+"Fig"+str(t)+".png",dpi=(120))
 		plt.show()
 		plt.draw()
 		plt.clf()	
@@ -732,7 +732,7 @@ def preProcessCyano(brightImg,chlorophyllImg):
 	cellMask = cv.dilate(np.uint8(bpass(chlorophyllImg,1,10)>10),None,iterations=15)
 	processedBrightfield = bpass(brightImg,1,10)>10
 
-	dilatedIm=cv.dilate(removeSmallBlobs(processedBrightfield*cellMask,15),None,iterations=2)
+	dilatedIm=cv.dilate(removeSmallBlobs(processedBrightfield*cellMask,75),None,iterations=2)
 #	dilatedIm=(removeSmallBlobs(processedBrightfield*cellMask,15))
 
 	if np.sum(cellMask==0):
@@ -742,11 +742,15 @@ def preProcessCyano(brightImg,chlorophyllImg):
 #		imgOut=(1-floodFill(dilatedIm,seedPt,1))
 	else:
 		imgOut=dilateConnected(1-dilatedIm,2)
-	
+
+	imgOut=np.uint8(processImage(imgOut.copy(),thres=0))
+
+#	imgOut=processImage(-imgOut+(bpass(chlorophyllImg,1,10)>10),thres=0)
+
+#	imgOut=removeSmallBlobs(imgOut,75)	
 	#Segment Cells accorging to solidity
 #	imgOut=segmentCells(imgOut>0,regionprops(imgOut>0,1)[:,6],
 #			   solidThres,2)	
-
 	return np.uint8(imgOut)
 
 def trackCells(fPath,lnoise=1,lobject=8,thres=3,lims=0,maxFiles=0):
@@ -791,7 +795,7 @@ def trackCells(fPath,lnoise=1,lobject=8,thres=3,lims=0,maxFiles=0):
 	bwL=list(range(len(lims)))
 	bwL0=list(range(len(lims)))
 	for fname in np.transpose(tifList):
-#		print(fPath+fname)
+		print(fPath+fname)
 		k=k+1
 		progress(np.double(k)/np.double(kmax))
 		img=cv.imread(fPath+fname,-1)
@@ -1195,7 +1199,8 @@ def findDivs(L):
 			L=Lup.copy()
 		elif np.sum(np.diff(Lup)**2)>np.sum(np.diff(Ldown)**2):
 			L=Ldown.copy()
-		L=Ldown.copy()
+#		L=Ldown.copy()
+		L=removePlateau(Ldown.copy())
 		Lw=rolling_window(L,win_size)
 		Lstd=np.std(Lw,-1)/np.mean(Lw,-1)
 		Li=(Lstd>std_thres)
@@ -1305,6 +1310,11 @@ def peakdet(v, delta, x = None):
     return array(maxtab), array(mintab)
 
 def removePeaks(Lin,mode='Down'):
+	'''
+	This function removes the peaks in a function.
+	Peaks are defined as a sudden increase followed by a 
+	sudden decrease in value within 4 datapoints. 
+	'''
 	divJumpSize=15
 	LL=Lin.copy()
 	#Find location of sudden jumps (up or down)
@@ -1364,6 +1374,39 @@ def removePeaks(Lin,mode='Down'):
 
 	return LL
 	
+def removePlateau(Lin):
+	'''
+	This function removes the plateaux in a function.
+	A plateau is defined as a sudden increase (decrease) in value
+	followed by a sudden decrease (increase). It is a plateau if the function
+	becomes continuous once a constant value is added (substracted) to the plateau. 
+	'''
+
+	divJumpSize=15
+	LL=Lin.copy()
+
+	#Find the location of the sudden jumps (up or down)
+	jumpIDup=(np.diff(LL)>divJumpSize).nonzero()[0]
+	jumpIDdown=(np.diff(LL)<-divJumpSize).nonzero()[0]
+
+	nextDown=[]
+	previousDown=[]
+
+	for id in jumpIDup:
+		if jumpIDdown[jumpIDdown>id].any():
+			nextDown=jumpIDdown[jumpIDdown>id][0]
+		if jumpIDdown[jumpIDdown<=id].any():
+			previousDown=jumpIDdown[jumpIDdown<=id][-1]
+
+		if nextDown and previousDown:
+			jumpDiffDown=np.abs(np.abs(LL[id]-LL[id+1])-np.abs(LL[nextDown]-LL[nextDown+1]))
+			jumpDiffUp=np.abs(np.abs(LL[id]-LL[id+1])-np.abs(LL[previousDown]-LL[previousDown+1]))
+			if jumpDiffDown<jumpDiffUp:
+				LL[(id+1):(nextDown+1)]=LL[(id+1):(nextDown+1)]-(LL[id+1]-LL[id])
+			elif jumpDiffUp<jumpDiffDown:
+				LL[(previousDown+1):(id+1)]=LL[(previousDown+1):(id+1)]+(LL[id+1]-LL[id])
+
+	return LL
 
 
 def rolling_window(a, window):
@@ -1711,7 +1754,9 @@ def smoothLength(trIn):
 	for id in range(len(trI)):
 		dT=trI[id]
 		if len(dT):
-			trI[id][:,4]=removePeaks(dT[:,4],'Down')
+			LL=removePeaks(dT[:,4],'Down')
+			LL=removePlateau(LL)
+			trI[id][:,4]=LL.copy()
 
 	trOut=revertListIntoArray(trI)
 	return trOut
