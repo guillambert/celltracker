@@ -1389,22 +1389,23 @@ def removePlateau(Lin):
 	jumpIDup=(np.diff(LL)>divJumpSize).nonzero()[0]
 	jumpIDdown=(np.diff(LL)<-divJumpSize).nonzero()[0]
 
-	nextDown=[]
-	previousDown=[]
 
 	for id in jumpIDup:
+		nextDown=-1
+		previousDown=-1
 		if jumpIDdown[jumpIDdown>id].any():
 			nextDown=jumpIDdown[jumpIDdown>id][0]
 		if jumpIDdown[jumpIDdown<=id].any():
 			previousDown=jumpIDdown[jumpIDdown<=id][-1]
 
-		if nextDown and previousDown:
+		if nextDown:
 			jumpDiffDown=np.abs(np.abs(LL[id]-LL[id+1])-np.abs(LL[nextDown]-LL[nextDown+1]))
+		if previousDown:
 			jumpDiffUp=np.abs(np.abs(LL[id]-LL[id+1])-np.abs(LL[previousDown]-LL[previousDown+1]))
-			if jumpDiffDown<jumpDiffUp:
-				LL[(id+1):(nextDown+1)]=LL[(id+1):(nextDown+1)]-(LL[id+1]-LL[id])
-			elif jumpDiffUp<jumpDiffDown:
-				LL[(previousDown+1):(id+1)]=LL[(previousDown+1):(id+1)]+(LL[id+1]-LL[id])
+		if jumpDiffDown<jumpDiffUp:
+			LL[(id+1):(nextDown+1)]=LL[(id+1):(nextDown+1)]-(LL[id+1]-LL[id])
+		elif jumpDiffUp<jumpDiffDown:
+			LL[(previousDown+1):(id+1)]=LL[(previousDown+1):(id+1)]+(LL[id+1]-LL[id])
 
 	return LL
 
