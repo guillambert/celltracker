@@ -11,6 +11,7 @@ import re
 import cv2 as cv
 import matplotlib as mp
 import matplotlib.nxutils as nx
+import matplotlib.path as pa
 import matplotlib.pylab as plt
 import os as os
 import munkres as mk
@@ -620,7 +621,7 @@ def matchIndices(dataList,matchType='Area'):
 	linkList=linkList[linkList[:,0]>0,:]
 	return linkList
 
-def putLabelOnImg(fPath,tr,dataRange,dim):
+def putLabelOnImg(fPath,tr,dataRange,dim,num):
 	'''
 	putLabelOnImg(fPath,tr,dataRange,dim) goes through the images in 
 	folder fPath over the time in dataRange and adds on top of each 
@@ -660,18 +661,24 @@ def putLabelOnImg(fPath,tr,dataRange,dim):
 				            str(trT[cell,dim])+', '+str(trT[cell,3]),
 					    color='w',fontsize=6)
 				'''
+				boxPts=getBoundingBox(trT[cell,:])
+				plt.plot(boxPts[:,0],boxPts[:,1],'gray',lw=0.5)
+				
 				plt.text(trT[cell,0],trT[cell,1],
 					 str(trT[cell,dim]),color='k',fontsize=5)
-				boxPts=getBoundingBox(trT[cell,:])
-				plt.plot(boxPts[:,0],boxPts[:,1],'k')
+				for c in num:					
+					if trT[cell,dim]==c:
+						plt.text(trT[cell,0],trT[cell,1],
+						 str(trT[cell,dim]),color='r',fontsize=5)
+
 #				if bwI[np.floor(trT[cell,1]),np.floor(trT[cell,0])]>0:
 #					bwI=floodFill(bwI.copy(),(trT[cell,1],trT[cell,0]),trT[cell,9])
 #		plt.imshow(bwI)
 #		plt.clim((0,30))
 		plt.title(str(t))
 		plt.hold(False)
-		plt.xlim((0,1200))
-		plt.ylim((0,1200))
+		plt.xlim((0,950))
+		plt.ylim((25,200))
 		
 #		cv.imwrite(fPath+'Fig'+str(t)+'.jpg',np.uint8(bwI))
 #		plt.savefig(fPath+"Fig"+str(t)+".png",dpi=(120))
@@ -753,7 +760,7 @@ def preProcessCyano(brightImg,chlorophyllImg):
 #			   solidThres,2)	
 	return np.uint8(imgOut)
 
-def trackCells(fPath,lnoise=1,lobject=8,thres=3,lims=0,maxFiles=0):
+def trackCells(fPath,lnoise=1,lobject=8,thres=3,lims=np.array([[0,-1]]),maxFiles=0):
 	'''
 	This prepares the data necessary to track the cells.
 	masterL,LL,AA=trackCells(fPath,lnoise=1,lobject=8,thres=5,lims=0)
@@ -878,27 +885,6 @@ def linkTracks(masterL,LL):
 	tr=tr[tr[:,2].argsort(-1,'mergesort'),]
 	tr=tr[tr[:,3].argsort(-1,'mergesort'),]
 
-	tr=removeShortTracks(tr,3)
-
-	print "fixing loose ends"
-	#Find possible link candidates, 1st pass
-	mList=fixTracks(tr,2,[0,2])
-	#Match the indices of the link candidates
-	tr=reassignTrackID(tr,mList)
-	
-	print "fixing loose ends"
-	
-	#Find possible link candidates, 2nd pass
-	mList=fixTracks(tr,2.5,[1,3])
-	#Match the indices of the link candidates
-	tr=reassignTrackID(tr,mList)
-	print "fixing loose ends"
-	
-	#Find possible link candidates, 3rd pass
-	mList=fixTracks(tr,3,[3,5])
-	#Match the indices of the link candidates
-	tr=reassignTrackID(tr,mList)
-	
 	return tr
 
 def processTracks(trIn):
@@ -910,27 +896,23 @@ def processTracks(trIn):
 	#Find and assign the daughter ID at each division 
 	# (do it twice because the first time around is reorganizes the 
 	# trackIDs so that the mother is on the left).
-	print "Link mother-daughter tracks"
-	tr=assignDaughter(trIn[:,0:8],3,[4,6])
-	tr=assignDaughter(tr[:,0:8],3,[4,6])
-	tr=assignDaughter(tr[:,0:8],3,[4,6])
-	tr=assignDaughter(tr[:,0:8],3,[4,6])
 	
+	tr=splitTracks(trIn)
 
-	print "rename Tracks"
+	tr=mergeTracks(tr)	
+
+#	print "rename Tracks"
 	#Remove orphaned cells and cells that do not divide
-	tr=renameTracks(tr)	
+#	tr=renameTracks(tr)	
 
 	print "find family IDs"
 	tr=findFamilyID(tr)
-	
 	print "match family IDs"
-	#tr=matchFamilies(tr)	
+	tr=matchFamilies(tr)	
 	#tr=matchFamilies(tr)	
 
 	print "fix family IDs"
 	#tr=fixFamilies(tr)	
-
 	print "Adding cell Age"
 	tr=addCellAge(tr)
 	
@@ -982,6 +964,7 @@ def fixTracks(tr,dist,timeRange):
 	'''
 	listOfMatches=fixTracks(tr,dist,timeRange) finds the trackIDs 
 	that join track ends with nearby track starts.
+	listOfMatches return [id1, id2, time, distance]
 	
 	dist is the factor by which the box bounding a cells is 
 	multiplied by when looking for possible candidates.
@@ -1011,7 +994,8 @@ def reassignTrackID(tr,matchList):
 		return tr
 	shortTrack=3
 	#Match the indices of the link candidates
-	matchL=matchIndices(matchList.take([0,1,3],axis=1),'Distance')
+	#matchL=matchIndices(matchList.take([0,1,3],axis=1),'Distance')
+	matchL=matchList.copy()
 
 	tr2=tr.copy()
 	
@@ -1027,6 +1011,8 @@ def reassignTrackID(tr,matchList):
 		if tr2.shape[1]>=9:
 			tr2[tr[:,8]==id1,8]=id0
 			tr2[tr[:,8]==-id1,8]=-id0
+			tr2[tr[:,9]==id1,9]=id0
+			tr2[tr[:,9]==-id1,9]=-id0
 	
 		#Correct IDs in matchL
 		matchL[matchL[:,0]==id1,0]=id0
@@ -1034,7 +1020,30 @@ def reassignTrackID(tr,matchList):
         tr2=tr2[tr2[:,2].argsort(-1,'mergesort'),]
         tr2=tr2[tr2[:,3].argsort(-1,'mergesort'),]
 
+	tr2[(np.diff(tr2[:,3])==0)&(np.diff(tr2[:,2])==0),:]=0
+
+	trOut=tr2[tr2[:,0]>0,:]
+
 	return tr2
+
+def removeShortCells(tr,shortCells=6):
+	'''
+	tr=removeShortTracks(tr,shortTrack=3) removes 
+	tracks shorter than shortTrack
+	'''
+	
+	shortIDs=np.unique(tr[tr[:,4]<shortCells,3])
+
+	trI=splitIntoList(tr,3)
+
+	for i in shortIDs:
+		trI[int(i)]=[]
+
+	trS=revertListIntoArray(trI)
+
+	return trS
+	
+
 
 def removeShortTracks(tr,shortTrack=3):
 	'''
@@ -1044,17 +1053,18 @@ def removeShortTracks(tr,shortTrack=3):
 	trLength=np.histogram(tr[:,3],np.unique(tr[:,3]))
         idLong=trLength[1][trLength[0]>shortTrack]
         k=0
+	trT=splitIntoList(tr,3)
         #Reassign cell ID
         trS=np.zeros(tr[0,:].shape)
         for id in idLong:
                 k=k+1
-                trTemp=tr[tr[:,3]==id,:]
-                trTemp[:,3]=k
-		trS=np.vstack([trS,trTemp])
+                trT[int(id)][:,3]=k
+		trS=np.vstack((trS,trT[int(id)]))
 	trS=trS[trS[:,2].argsort(-1,'mergesort'),]
 	trS=trS[trS[:,3].argsort(-1,'mergesort'),]
 	return trS
 	
+
 
 def matchTracks(inList1,inList2,dist,timeRange):
 	'''
@@ -1070,12 +1080,14 @@ def matchTracks(inList1,inList2,dist,timeRange):
 		
 		#Generate bounding box
 		boxPts=getBoundingBox(pts,dist)	
+		boxPath=pa.Path(boxPts.copy())
 
 		#Find starting points that fall inside the bounding box
 		nearPts=inList2[(inList2[:,2]<=(pts[2]+timeRange[1])) & 
 				(inList2[:,2]>=(pts[2]-timeRange[0])),:]
-		inIndx=nx.points_inside_poly(nearPts[:,0:2],boxPts)		
-		
+		inIndx=boxPath.contains_points(nearPts[:,0:2])	
+
+
 		if inIndx.any():
 			inPts=nearPts[inIndx,:]
 			
@@ -1097,7 +1109,7 @@ def matchTracks(inList1,inList2,dist,timeRange):
 			VC=eucledianDistances(np.array([pts[0:2]]),inPts[:,0:2])	
 			VC=VC[0]
 
-			T=5*np.hypot(0,pts[2]-inPts[:,2])
+			T=10*abs(inPts[:,2]-pts[2]-1)
 			#Put the possible candidates into an array		
 			
 			for id in range(len(VL)):
@@ -1105,7 +1117,8 @@ def matchTracks(inList1,inList2,dist,timeRange):
 				Dist=np.array([[pts[3],inPts[id,3],
 					     pts[2],T[id]+V.min()]]) 			
 				matchList=np.append(matchList,Dist,0)
-	#Match start and finishes with matchIndices
+
+	matchList[matchList[:,0]==matchList[:,1],:]=0	
 	matchList=matchList[matchList[:,0]>0,:]
 
 	return matchList
@@ -1125,6 +1138,8 @@ def splitIntoList(listIn,dim):
 	for id in np.arange(len(listOut)):
 		if listT.shape[0]>0:
 			listOut[int(id)]=(listT[listT[:,dim]==id,:])
+		else:
+			listOut[int(id)]=[]
 		if np.mod(id,divL)==0:
 			listT=listIn[(listIn[:,dim]>id) & 
 				     (listIn[:,dim]<=(id+divL)),:]
@@ -1141,13 +1156,17 @@ def revertListIntoArray(listIn):
 	nID=100	
 
 	arrayOut=list(range(len(listIn)/nID+1))
-	
-	arrayOut[0]=listIn[1].copy()
+	k=0
+	while len(listIn[k])<=0:
+		k+=1
+	arrayOut[0]=listIn[k].copy()
 	
 	k=0
 	for id in range(2,len(listIn)):
-		if np.size(arrayOut[k])==1:
+		if (np.size(arrayOut[k])==1)and(np.size(listIn[id])>1):
 			arrayOut[k]=listIn[id]
+		elif isinstance(listIn[id],int):
+			a=1
 		elif len(listIn[id])>0:
 			arrayOut[k]=np.vstack((arrayOut[k],listIn[id]))
 		if np.mod(id,nID)==0:
@@ -1171,7 +1190,7 @@ def findDivisionEvents(trIn):
 	divE=np.zeros((1,2))
 	for tr in trT:
 		if np.size(tr)>1:
-			if len(tr)>25:
+			if len(tr)>10:
 				divEvents=findDivs(tr[:,4])
 				if divEvents.any():
 					divTimes=tr[divEvents.tolist(),2]
@@ -1187,54 +1206,34 @@ def findDivs(L):
 	L is the length of the cell
 	'''	
 	divTimes=np.array([])
-	win_size=10
-	divJumpSize=15
-	if len(L)>win_size:
-		std_thres=0.15
+	divJumpSize=17.5
+	minSize=10
+	std_thres=0.15
 		#Remove the points with a large positive derivative, do this twice
-		Lup=removePeaks(L.copy(),'Up')	
-		Ldown=removePeaks(L.copy(),'Down')
+	Lup=removePeaks(L.copy(),'Up')	
+	Ldown=removePeaks(L.copy(),'Down')
 
-		if np.sum(np.diff(Lup)**2)<np.sum(np.diff(Ldown)**2):	
-			L=Lup.copy()
-		elif np.sum(np.diff(Lup)**2)>np.sum(np.diff(Ldown)**2):
-			L=Ldown.copy()
+	if np.sum(np.diff(Lup)**2)<np.sum(np.diff(Ldown)**2):	
+		L=Lup.copy()
+	elif np.sum(np.diff(Lup)**2)>np.sum(np.diff(Ldown)**2):
+		L=Ldown.copy()
 #		L=Ldown.copy()
-		L=removePlateau(Ldown.copy())
-		Lw=rolling_window(L,win_size)
-		Lstd=np.std(Lw,-1)/np.mean(Lw,-1)
-		Li=(Lstd>std_thres)
-		B=np.arange(len(Li))+win_size/2
-		if Li[0]:
-			Li[0]=False
-		if Li[-1]:
-			Li[-1]=False
-		#Create list of points limiting the region of interest
-		Blist=B[np.diff(Li)]
-		
-		
-		#If the number delimiting point is odd
-		if np.mod(len(Blist),2)==1:
-			if Li[0]:
-				Blist=np.append(np.array([0]),Blist)
-			else:
-				Blist=np.append(Blist,np.array([len(L)]))
-		Blist=Blist.reshape(-1,2)				
-		#Find the general location of a division event.
-		divLoc=(np.diff(L)<-divJumpSize).nonzero()
-		#Go through each point in the track
-		for pt in Blist:
-			E=divLoc[0][(divLoc[0]>pt[0])&(divLoc[0]<pt[1])]	
-			if E.any():
-				divTimes=np.append(divTimes,np.max(E))
-		#Check if length is higher later
-		for i in range(len(divTimes)):
-			divs=divTimes[i]
-			if L[divs:(divs+3)].max()>L[divs]:
-				divTimes[i]=0
+	L=removePlateau(Ldown.copy())
+
+	#Find the general location of a division event.
+	divLoc=((np.diff((L))<-divJumpSize)&(L[:-1]>minSize)).nonzero()
+
+	#Check if length is higher later
+	divTimes=np.array(divLoc[0])
+	for i in range(len(divTimes)):
+		divs=divTimes[i]
+		if L[divs:(divs+3)].max()>L[divs]:
+			divTimes[i]=0
+			
 	divTimes=divLoc[0]+1.
 	divTimes=divTimes[divTimes!=0]
-	divTimes=divTimes[divTimes>3]	
+	divTimes=divTimes[divTimes>3]
+
 	return divTimes
 
 
@@ -1315,7 +1314,7 @@ def removePeaks(Lin,mode='Down'):
 	Peaks are defined as a sudden increase followed by a 
 	sudden decrease in value within 4 datapoints. 
 	'''
-	divJumpSize=15
+	divJumpSize=10
 	LL=Lin.copy()
 	#Find location of sudden jumps (up or down)
 	jumpIDup=(np.diff(LL)>divJumpSize).nonzero()[0]
@@ -1325,27 +1324,27 @@ def removePeaks(Lin,mode='Down'):
 	if mode=='Down':	
 		for id in jumpIDdown:
 			if ((id-jumpIDup)==-1).nonzero()[0].size:
-				LL[id+1]=(LL[id]+LL[id+2])/2.
+				LL[id+1]=LL[id].copy()
 			elif ((id-jumpIDup)==-2).nonzero()[0].size:
-				LL[id+1]=2*LL[id]/3.+LL[id+3]/3. 
-				LL[id+2]=LL[id]/3.+2*LL[id+3]/3. 	
+				LL[id+1]=LL[id].copy() 
+				LL[id+2]=LL[id].copy() 	
 			elif ((id-jumpIDup)==-3).nonzero()[0].size:
-				LL[id+1]=3*LL[id]/4.+LL[id+4]/4.
-				LL[id+2]=LL[id]/2.+LL[id+4]/2.
-				LL[id+3]=LL[id]/4.+3*LL[id+4]/4.
+				LL[id+1]=LL[id].copy()
+				LL[id+2]=LL[id].copy()
+				LL[id+3]=LL[id].copy()
 		jumpIDup=(np.diff(LL)>divJumpSize).nonzero()[0]
 		jumpIDdown=(np.diff(LL)<-divJumpSize).nonzero()[0]
 	
                 for id in jumpIDdown:
                        if ((id-jumpIDup)==1).nonzero()[0].size:
-        	               LL[id]=(LL[id-1]+LL[id+1])/2.
+        	               LL[id]=LL[id+1].copy()
                        elif ((id-jumpIDup)==2).nonzero()[0].size:
-                               LL[id-1]=2*LL[id-2]/3.+LL[id+1]/3.      
-                               LL[id]=LL[id-2]/3.+2*LL[id+1]/3.        
+                               LL[id-1]=LL[id+1].copy()
+                               LL[id]=LL[id+1].copy()
                        elif ((id-jumpIDup)==3).nonzero()[0].size:
-                               LL[id-2]=3*LL[id-3]/4.+LL[id+1]/4.
-                               LL[id-1]=LL[id-3]/2.+LL[id+1]/2.
-                               LL[id]=LL[id-3]/4.+3*LL[id+1]/4.
+                               LL[id-2]=LL[id+1].copy()
+                               LL[id-1]=LL[id+1].copy()
+                               LL[id]=LL[id+1].copy()
 
 	elif mode=='Up':
 		for id in jumpIDup:
@@ -1382,13 +1381,17 @@ def removePlateau(Lin):
 	becomes continuous once a constant value is added (substracted) to the plateau. 
 	'''
 
-	divJumpSize=15
+	divJumpSize=10
 	LL=Lin.copy()
 
 	#Find the location of the sudden jumps (up or down)
 	jumpIDup=(np.diff(LL)>divJumpSize).nonzero()[0]
+	jumpIDup=jumpIDup[jumpIDup>0]
+	jumpIDup=jumpIDup[jumpIDup<(len(LL)-1)]
+	
 	jumpIDdown=(np.diff(LL)<-divJumpSize).nonzero()[0]
-
+	jumpIDdown=jumpIDdown[jumpIDdown>0]
+	jumpIDdown=jumpIDdown[jumpIDdown<(len(LL)-1)]
 
 	for id in jumpIDup:
 		nextDown=-1
@@ -1398,15 +1401,18 @@ def removePlateau(Lin):
 		if jumpIDdown[jumpIDdown<=id].any():
 			previousDown=jumpIDdown[jumpIDdown<=id][-1]
 
-		if nextDown:
+		if nextDown>0:
 			jumpDiffDown=np.abs(np.abs(LL[id]-LL[id+1])-np.abs(LL[nextDown]-LL[nextDown+1]))
-		if previousDown:
+		else:
+			jumpDiffDown=np.Inf
+		if previousDown>0:
 			jumpDiffUp=np.abs(np.abs(LL[id]-LL[id+1])-np.abs(LL[previousDown]-LL[previousDown+1]))
+		else:
+			jumpDiffUp=np.Inf	
 		if jumpDiffDown<jumpDiffUp:
 			LL[(id+1):(nextDown+1)]=LL[(id+1):(nextDown+1)]-(LL[id+1]-LL[id])
 		elif jumpDiffUp<jumpDiffDown:
 			LL[(previousDown+1):(id+1)]=LL[(previousDown+1):(id+1)]+(LL[id+1]-LL[id])
-
 	return LL
 
 
@@ -1419,125 +1425,186 @@ def findDD(trIn):
 	divData=findDivisionEvents(trIn)
 	return divData
 
-def assignDaughter(trIn,dist=2,timeRange=[4,6]):
+def splitTracks(trIn):
 	'''
-
+	This function splits each tracks into cell segment that start with birth
+	and ends with cell divisions or device escape. 
 	'''
-	timeS=time.time()
-	divData=findDivisionEvents(trIn)	
-		
-	m=np.zeros((len(divData),8))
-	k=0
-	#Extract the track information at every division events
 	trI=splitIntoList(trIn,3)
-	for pt in divData:
-		dT=trI[int(pt[0])].copy()
-		dT=dT[abs(dT[:,2]-pt[1])<3,:]
-		dT=dT[(dT[:,4]==np.max(dT[:,4])),:]	#consider cell before division.
-		dT[0][2]=pt[1]
-		m[k,:]=dT[0]
-    		k=k+1		
-	#Find the closest cells to every division events.	
-	masterStartList=trIn[np.roll(np.diff(trIn[:,3])>0,1),:]
-	
-	daughterMatchList=matchTracks(m,masterStartList,dist,timeRange)
-	#Create an array containing [motherID, daughterID, time]	
-	matchL=np.zeros((1,3))
-	for t in np.unique(daughterMatchList[:,2]):
-		if len(daughterMatchList):
-			mt=daughterMatchList[daughterMatchList[:,2]==t,:]
-		if mt.any():
-			ml=matchIndices(mt.take([0,1,3],axis=1),'Distance')		
-			ml[:,2]=t
-			matchL=np.append(matchL,ml,0)
-			for id in ml[:,1]:
-				if len(daughterMatchList):
-					daughterMatchList=daughterMatchList[daughterMatchList[:,1]!=id,:]
-	#Add a new column to trIn. Put in this column the ID of the daughter cell.
-	#Also, put the ID of the mother	
-#	print matchL
-	trIn=np.hstack([trIn,np.zeros((len(trIn),1))])
-	trI=splitIntoList(trIn,3)
-	for k in reversed(range(len(matchL)-1)):
-		div=matchL[k+1,:]
-			
-		trI[int(div[0])][trI[int(div[0])][:,2]==div[2],8]=div[1]
-		
-		birthTime=trI[int(div[1])][:,2]
+	divData=findDivisionEvents(trIn.copy()) 
+	x=np.array([0,0])
 
-		
-		trI[int(div[1])][0,8]=-div[0]
-	
-		#trI=relabelCells(trI,div)
-	trIn=revertListIntoArray(trI)	
-	trIn=trIn[trIn[:,2].argsort(-1,'mergesort'),]
-	trIn=trIn[trIn[:,3].argsort(-1,'mergesort'),]
-	
-	
-	return trIn
+	k=1
+	idList=np.unique(trIn[:,3]).astype('int')
+	for id in idList:
+		if np.intersect1d(divData[:,0],np.array(id)):
+			divList=divData[divData[:,0]==id,:]
+			x[0]=trI[id][0,2]
+			for pt in divList:
+				x[1]=pt[1].copy()
+				trI[id][(trI[id][:,2]>=x[0])&(trI[id][:,2]<x[1]),3]=k
+				k=k+1
+				x[0]=x[1].copy()
+			trI[id][trI[id][:,2]>=x[0],3]=k
+			k=k+1
+		else:
+			trI[id][:,3]=k
+			k=k+1	
 
-		
-def relabelCells(trR,div):
+	trOut=revertListIntoArray(trI)		
+	
+	return trOut
+
+def findDaughters(trIn,merge=False):
 	'''
-	Not working.
+	
 	'''
-	#Relabel mother and daughter cells so that the mother is always on the 'left'
-	divisionEvents=(trR[:,8]>0).nonzero()[0]	
+	tr=trIn.copy()
 
-	trRI=splitIntoList(trR,3)
+	meanL=np.mean(tr[:,4])
+	meanW=np.mean(tr[:,5])
 
-	for loc in reversed(divisionEvents):
-		motherID=trR[loc,3]
-		daughterID=trT[loc,8]
-		divisionTime=trT[loc,2]
+	tr[tr[:,4]<meanL,4]=meanL
+	tr[tr[:,5]<meanW,5]=meanW
+	#Find and match division events
+	mList0=fixTracks(tr,2.5,[2,6])
+	
+	mList1=mList0[mList0[:,3]<meanL/2,:]
+	divData1=matchIndices(mList1.take([0,1,3],axis=1),'Distance')
 
-		motherX=trRI[int(motherID)][trRI[int(motherID)][:,2]>(divisionTime+1),0]
+	mList2=mList0.copy()
+	for div in divData1:
+		mList2[(mList0[:,1]==div[1]),:]=0
 
-		daughterX==trRI[int(daughterID)][trRI[int(daughterID)][:,2]>(divisionTime+2),0]
+	mList2=mList2[mList2[:,0]>0,:]
 
-		if motherX.any()&daughterX.any():
-			if motherX[0]>daughterX[0]:
-				motherArr=(trR[:,3]==motherID)&(trR[:,2]>divisionTime)
-				daughterArr=(trR[:,3]==daughterID)&(trR[:,2]>divisionTime)
+	divData2=matchIndices(mList2.take([0,1,3],axis=1),'Distance')
 
-				motherDivs=(trR[:,2]>divisionTime)&(trR[:,8]==-motherID)
-				daughterDivs=(trR[:,2]>divisionTime)&(trR[:,8]==-motherID)
+	divData=np.vstack((divData1,divData2))
+	divData=divData[divData[:,0].argsort(),]
 
-				tr[motherArr,3]=daughterID	
-				tr[daughterArr,3]=motherID
+	if merge:
+		trOut=mergeIndividualTracks(trIn,divData.copy())
+	else:
+		trOut=trIn.copy()
+	return trOut,divData
+
+def mergeIndividualTracks(trIn,divData):
+	'''
+
+	'''
+	trT=splitIntoList(trIn,3)
+	idList=np.unique(divData[:,0])
+	for k in range(len(idList)):
+		motherCell=int(idList[k])
+		daughterCell=divData[divData[:,0]==motherCell,1].astype('int')
+		if len(daughterCell)==1:
+			if checkContinuous(trT,motherCell,daughterCell):
+				trT[motherCell]=np.vstack((trT[motherCell],trT[daughterCell]))
+				trT[motherCell][:,3]=motherCell
+				trT[daughterCell]=[]
+				idList[idList==daughterCell]=motherCell
+				divData[divData[:,0]==motherCell,0]=0
+				divData[divData[:,0]==daughterCell,0]=motherCell
+	trOut=revertListIntoArray(trT)
+	return trOut
+
+def mergeTracks(trIn):
+	'''
+
+	'''
+	trIn=removeShortTracks(trIn,1)	
+	trIn=removeShortCells(trIn,6)	
+	#Fix tracks that skip frames without divisions
+	trOut,divData=findDaughters(trIn,merge=True)
+	#Get division data
+	trOut,divData=findDaughters(trOut)
+
+	masterEndList=trOut[np.diff(trOut[:,3])>0,:]
+	for i in np.unique(masterEndList[:,3]):
+		dd=divData[divData[:,0]==i,:]
+		if len(dd)>1:
+			masterEndList[masterEndList[:,3]==i,:]=0
+	masterEndList=masterEndList[masterEndList[:,0]>0,:]
+	
+	orphanCoordinates=np.zeros((1,trOut.shape[1]))
+
+	for i in np.unique(trOut[trOut[:,2]>50,3]):
+		dd=divData[divData[:,1]==i,:]
+		if len(dd)<1:
+			orphanCoordinates=np.vstack((orphanCoordinates,trOut[trOut[:,3]==i,:][0]))
+
+	#Link between orphan tracks at birth and track ends
+	mList=matchTracks(masterEndList,orphanCoordinates,4,[3,8])
+	if mList.any():
+		matchData=matchIndices(mList.take([0,1,3],axis=1),'Distance')
+	else:
+		matchData=np.zeros((3,1))
+
+	trOut=np.hstack((trOut,np.zeros((len(trOut),2))))
+
+	trT=splitIntoList(trOut,3)
+	for i in np.unique(trOut[:,3]):
+		divD=divData[divData[:,0]==i,:]
+		mData=matchData[matchData[:,0]==i,:]
+		if len(divD)==2:
+			trT[int(i)][-1,8]=divD[0,1]
+			trT[int(divD[0,1])][0,8]=i
+			trT[int(divD[0,1])][0,9]=i
+			trT[int(i)][-1,9]=divD[1,1]
+			trT[int(divD[1,1])][0,8]=i
+			trT[int(divD[1,1])][0,9]=i
+		elif (len(mData)==1)and(len(divD)==1):
+			trT[int(i)][-1,8]=divD[0,1]
+			trT[int(divD[0,1])][0,8]=i
+			trT[int(divD[0,1])][0,9]=i
+			trT[int(i)][-1,9]=mData[0,1]
+			trT[int(mData[0,1])][0,8]=i
+			trT[int(mData[0,1])][0,9]=i
+		elif (len(mData)==1)and(len(divD)==0):
+			trT[int(i)][-1,8]=mData[0,1]
+			trT[int(i)][-1,9]=mData[0,1]
+			trT[int(mData[0,1])][0,8]=i
+			trT[int(mData[0,1])][0,9]=i
+		elif (len(mData)==0)and(len(divD)==1):	
+			trT[int(i)][-1,8]=divD[0,1]
+			trT[int(i)][-1,9]=divD[0,1]
+			trT[int(divD[0,1])][0,8]=i
+			trT[int(divD[0,1])][0,9]=i
+
+	trOut=revertListIntoArray(trT)
+
+	trOut=trOut[trOut[:,2].argsort(-1,'mergesort'),]
+	trOut=trOut[trOut[:,3].argsort(-1,'mergesort'),]
+
+	trOut[(np.diff(trOut[:,2])==0)&(np.diff(trOut[:,3])==0),:]==0
+	trOut=trOut[trOut[:,0]>0,:]
+
 
 	
-	motherID=div[0]
-	daughterID=div[1]
-	divisionTime=div[2]
-#	motherDivLoc=tr[(tr[:,3]==motherID)&(tr[:,2]>(divisionTime+2)),0]		
-	motherDivLoc=trR[int(motherID)][trR[int(motherID)][:,2]>(divisionTime+1),0]
 
-#	daughterDivLoc=tr[(tr[:,3]==daughterID)&(tr[:,2]>(divisionTime+2)),0]		
-	daughterDivLoc=trR[int(daughterID)][trR[int(daughterID)][:,2]>(divisionTime+2),0]
+	return trOut
 
 
+def checkContinuous(trIn,id1,id2):
+	'''
 
-	if motherDivLoc.any()&daughterDivLoc.any():
-		if motherDivLoc[0]>daughterDivLoc[0]:
-#			motherArr=(tr[:,3]==motherID)&(tr[:,2]>divisionTime)		
+	'''
+	dT1=trIn[id1].copy()
+	dT2=trIn[id2].copy()
+
+	L=np.hstack((dT1[:,4],dT2[:,4]))
+	if len(L)>10:
+		divs=findDivs(L)
+	else:
+		return True
+	if divs.any():
+		return False
+	else:
+		return True
+
+
 	
-#			daughterArr=(tr[:,3]==daughterID)&(tr[:,2]>divisionTime)
-			
-#			tr[motherArr,3]=daughterID
-			trR[int(motherID)][trR[int(motherID)][:,2]>divisionTime,3]=daughterID	
-
-#			tr[daughterArr,3]=motherID
-			trR[int(daughterID)][trR[int(daughterID)][:,2]>divisionTime,3]=motherID		
-	
-		#daughterArrRem=(tr[:,3]==daughterID)&(tr[:,2]<=divisionTime)		
-		trR[int(daughterID)]=trR[int(daughterID)][np.invert(trR[int(daughterID)][:,2]<=divisionTime),:]		
-		#if np.sum(daughterArrRem)>0:
-		#	tr=tr[np.invert(daughterArrRem),:]
-	
-
-	return trR
-
 def renameTracks(trIn):
 	'''
 	This script changes the track assignment list to remove
@@ -1606,20 +1673,18 @@ def findFamilyID(trIn):
 		while not stop:
 			famList1=famList.copy()
 			for id in famList:
-				famList0=trI[int(id)][trI[int(id)][:,8]>0,8]
-				famList=np.unique(np.hstack([famList,
+				if len(trI[int(id)])>0:
+					famList0=np.unique(trI[int(id)][trI[int(id)][:,8]>0,8:10])
+					famList=np.unique(np.hstack([famList,
 					                     famList0]))
 			if np.array_equal(famList,famList1):
 				stop=True	
 		for id in famList:
-			trI[int(id)][:,9]=famID
+			trI[int(id)][:,-1]=famID
 		cellIdList=np.setdiff1d(cellIdList,famList)
 		stop=False
-		
-	trLong=trI[0].copy()
-	for id in range(1,len(trI)):
-		if not np.isscalar(trI[id]):
-			trLong=np.vstack([trLong,trI[id]])
+	trLong=revertListIntoArray(trI)	
+	
 	return trLong
 		
 def matchFamilies(trIn):
@@ -1629,54 +1694,59 @@ def matchFamilies(trIn):
 	'''
 	trIn=np.hstack([trIn,np.zeros((len(trIn),1))])	
 
-		
-	trFam=splitIntoList(trIn,9)
-	trI=splitIntoList(trIn,3)	
-	masterStartList=trIn[np.roll(np.diff(trIn[:,3])>0,1),:]
-        divisionList=trIn[trIn[:,8]>0,:]	
-	#find track ends
-	
-	
-	dist=15	
-	famMatchL=np.array([0,0,0,0,0]) #[oldFam, newFam, time, motherID, daughterID]
-	
-	# Loop over each family, find id of family closest to its start, 
-	# store that in famMatchL=[newfamID, oldFamID]
+	freeID=np.setdiff1d(np.arange(2*np.max(trIn[:,3])),np.unique(trIn[:,3]))
+	freeID=freeID[1:].copy()
 
-	for famID in range(len(trFam)):
-		if len(trFam[famID])>0:
-			if trFam[famID][0,2]>10:
-				listOfMatches=matchTracks([trFam[famID][0,:]],
-							   trIn[10:,:],
-							   dist,[50,-1])
-				if listOfMatches.any():
-					minD=listOfMatches[:,3].min()
-					listOfMatches=listOfMatches[listOfMatches[:,3]<2*minD,:]
-					for i in range(len(listOfMatches)):  #Make sure parent did not divide
-						pt=listOfMatches[i,:]
-						if trIn[(trIn[:,3]==pt[1]) & (trIn[:,2]==pt[2]),8]:
-							listOfMatches[i,3]=10*minD					
-						if len(trIn[(trIn[:,3]==pt[1]) & (trIn[:,2]==pt[2]),8])==0:
-							listOfMatches[i,3]=10*minD					
-					minD=listOfMatches[:,3].min()
-					match=listOfMatches[(listOfMatches[:,3]==minD).nonzero(),:][0][0]
-					famMatchL=np.vstack([famMatchL,np.array([famID,trI[int(match[1])][0,9],match[2],match[1],match[0]])])
-					trIn[(trIn[:,3]==match[1])&(trIn[:,2]==match[2]),8]=match[0]
+	trFam=splitIntoList(trIn,10)
+	trI=splitIntoList(trIn,3)	
+	masterEndList=trIn[np.diff(trIn[:,3])>0,:]
+
 	
-	#Loop through the [newFamID,oldFamID] array, updates the negative famID to the 10th column 
-	for id in reversed(range(len(famMatchL))):
-		pt=famMatchL[id]
-		if pt.any():
-			trI[int(pt[3])][trI[int(pt[3])][:,2]==pt[2],8]=pt[4]
-			trI[int(pt[3])][trI[int(pt[3])][:,2]==pt[2],8]=pt[4]
-			trI[int(pt[4])][0,8]=-pt[3]
-        trOut=trI[0].copy()
-        for id in range(1,len(trI)):
-	        if not np.isscalar(trI[id]):
-                        trOut=np.vstack([trOut,trI[id]])	
-	trOut=findFamilyID(trOut[:,0:9])
+	famStart=trIn[0]
+	for tt in trFam:
+		famStart=np.vstack((famStart,tt[0]))
+
+	famStart[:,5]=famStart[:,5]/2
+	initialIDs=np.unique(trIn[trIn[:,2]<25,10])
+	for i in initialIDs:
+		famStart[famStart[:,10]==i,:]=0
+	famStart=famStart[famStart[:,0]>0,:]
+	listOfMatches=matchTracks(famStart,trIn,5,[0,1])	
+
+	matchData=matchIndices(listOfMatches.take([0,1,3],axis=1),'Distance')
 	
+	for md in matchData:
+		trI[int(md[0])][0,8:10]=md[1]
+		
+		divTime=trI[int(md[0])][0,2]
+		if len(trI[int(md[1])][trI[int(md[1])][:,2]<divTime,3])==0:
+			divTime+=2
+		trI[int(md[1])][trI[int(md[1])][:,2]>=divTime,3]=freeID[0]
+		trI[int(md[1])][trI[int(md[1])][:,2]==(divTime),8]=md[1]
+		trI[int(md[1])][trI[int(md[1])][:,2]==(divTime),9]=md[1]		
+		trI[int(md[1])][trI[int(md[1])][:,2]==(divTime-1),8]=md[0]
+		trI[int(md[1])][trI[int(md[1])][:,2]==(divTime-1),9]=freeID[0]		
+
+		daughterID1=trI[int(md[1])][-1,8]
+		daughterID2=trI[int(md[1])][-1,8]
+		if daughterID1>0:
+			trI[int(daughterID1)][0,8:10]=freeID[0]
+			trI[int(daughterID2)][0,8:10]=freeID[0]
+
+		freeID=freeID[1:].copy()
+
+	trOut=revertListIntoArray(trI)
+
+        trOut=trOut[trOut[:,2].argsort(-1,'mergesort'),]
+        trOut=trOut[trOut[:,3].argsort(-1,'mergesort'),]
+        
+        trOut[(np.diff(trOut[:,2])==0)&(np.diff(trOut[:,3])==0),:]==0
+        trOut=trOut[trOut[:,0]>0,:]
+
+	trOut=findFamilyID(trOut[:,0:10])	
+
 	return trOut
+
 	
 def fixFamilies(trIn):
 	'''
@@ -1705,45 +1775,99 @@ def addCellAge(trIn):
 	'''
 	Adds the age of the cells in the last column
 	'''	
-	divData=findDivisionEvents(trIn)			
-	
-	trIn=np.hstack([trIn,np.zeros((len(trIn),1))])	
 
-	trIn[np.roll(np.diff(trIn[:,3])>0,1),10]=1		
+	trIn=np.hstack((trIn,np.zeros((len(trIn),1))))
+	trI=splitIntoList(trIn,3)
 
-	for pt in divData:
-		id=pt[0]
-		time=pt[1]
-		trIn[(trIn[:,3]==id)&(trIn[:,2]==time),10]=1			
+	for i in range(len(trI)):
+		if len(trI[i])>0:
+			motherID=trI[i][0,8]
+			if motherID>0:
+				if len(trI[int(motherID)])>0:
+					divisionTime=trI[int(motherID)][-1,2]
+			else:
+				divisionTime=trI[i][0,2]	
+			tStart=trI[i][0,2]-divisionTime-1
+			trI[i][0,-1]=tStart
+			trI[i][1:,-1]=trI[i][0,-1]+np.cumsum(np.diff(trI[i][:,2]))
+			if trI[i][0,-1]>0:
+				trI[i]=np.vstack((-1*np.ones((tStart,trI[i].shape[1])),trI[i]))
+				trI[i][:tStart,0]=trI[i][tStart,0]
+				trI[i][:tStart,1]=trI[i][tStart,1]
+				trI[i][:tStart,2]=trI[i][tStart,2]-np.arange(tStart,0,-1)
+				trI[i][:,3]=i
+				trI[i][:tStart,4]=trI[i][tStart,4]
+				trI[i][:tStart,5]=trI[i][tStart,5]
+				trI[i][:tStart,6]=trI[i][tStart,6]
+				trI[i][:tStart,7]=trI[i][tStart,7]
+				trI[i][0,8]=trI[i][tStart,8]
+				trI[i][0,9]=trI[i][tStart,9]
+				trI[i][1:-1,8]=0
+				trI[i][1:-1,9]=0
+				trI[i][:,10]=trI[i][-1,10]
+				trI[i][:tStart,-1]=np.arange(tStart)
+			
+			if (np.diff(trI[i][:,2])>1).any():
+				trI[i]=fillGap(trI[i].copy())
 
+	trOut=revertListIntoArray(trI)
+	return trOut
+
+def fillGap(tr):
+	'''
+
+	'''
+	trIn=tr.copy()
+	stop=False
 	k=0
-	for i in range(len(trIn)):
-		if trIn[i,10]==1:
-			k=0
-		trIn[i,10]=k
-		k=k+1
-	
-	return trIn	
+	while stop==False:
+		dt=trIn[k+1,2]-trIn[k,2]
+		if dt>1:
+			dTemp=trIn[k,:].copy()
+			dTemp[2]=trIn[k,2]+1
+			dTemp[11]=trIn[k,11]+1
+			trIn=np.insert(trIn,k+1,dTemp,0)
+			k=k+1
+		if dt>2:
+			dTemp=trIn[k,:].copy()
+			dTemp[2]=trIn[k,2]+1
+			dTemp[11]=trIn[k,11]+1
+			trIn=np.insert(trIn,k+1,dTemp,0)
+			k=k+1
+		elif dt>3:
+			dTemp=trIn[k,:].copy()
+			dTemp[2]=trIn[k,2]+1
+			dTemp[-1]=trIn[k,-1]+1
+			trIn=np.insert(trIn,k+1,dTemp,0)
+			k=k+1
+		elif dt>4:
+			print 'bar'
+
+		if (k+2)==len(trIn):
+			stop=True
+		else:
+			k=k+1
+
+	return trIn
 
 def addElongationRate(trIn):
 	'''
 	Fits an exponential to the length between every divisions to find the elongation rate.
 	'''
-	divLocations=(trIn[:,10]==0).nonzero()[0]
+	trIn=np.hstack((trIn,np.zeros((len(trIn),1))))
+	trI=splitIntoList(trIn,3)
 
-	elongationRate=np.zeros((len(trIn),1))
-
-	for loc in range(len(divLocations)-1):
-		dataRange=range(divLocations[loc],divLocations[loc+1])	
-		dT=trIn[dataRange,4]
-		if len(dT)>20:
-			dT=dT[5:-5]
-			z = np.polyfit(range(len(dT)), np.log(dT), 1)
-			elongationRate[dataRange]=z[0]	
+	for id in np.unique(trIn[:,3]):
+		dT=trI[int(id)].copy()
+		if len(dT)>15:
+			dT=dT[5:-5,:]
+			z = np.polyfit(range(len(dT)), np.log(np.abs(dT[:,4])), 1)
+			dT[:,-1]=z[0]
+			trI[int(id)][:,-1]=z[0]
+	trOut=revertListIntoArray(trI)
 	
-	trIn=np.hstack([trIn,elongationRate])
-
-	return trIn
+	
+	return trOut
 
 def smoothLength(trIn):
 	'''
@@ -1944,7 +2068,10 @@ if __name__ == "__main__":
 			NUMBEROFREGIONS=int(raw_input('How many regions per field of view? (Enter a number) '))
 		else:
 			NUMBEROFREGIONS=1
-		LIMITFILES=raw_input('Enter the number of files to analyze (leave empty for all) ' or 0)
+		LIMITFILES=raw_input('Enter the number of files to analyze (leave empty for all) ' or '0')
+		if not LIMITFILES:
+			LIMITFILES=0
+		print LIMITFILES
 		LINKTRACKS=raw_input('Do you want to link the cell tracks? (yes or no) ')
 		if LINKTRACKS=='yes':
 			PROCESSTRACKS=raw_input('Do you want to analyze the cell tracks? (yes or no) ')
@@ -1955,12 +2082,15 @@ if __name__ == "__main__":
 		LINKTRACKS='yes'
 		PROCESSTRACKS='yes'
 		SAVEPATH='./'
+		MULTIPLEREGIONS='no'
+		NUMBEROFREGIONS=1		
 
 	np.savez(SAVEPATH+'processFiles.npz',lnoise=lnoise,lobject=lobject,thres=thres)
 
 	if MULTIPLEREGIONS=='yes':
 		lims=splitRegions(FILEPATH,NUMBEROFREGIONS)
-		print lims
+	else:
+		lims=np.array([[0,-1]])
 	if PROCESSFILES=='yes':
 		masterL,LL,AA=trackCells(FILEPATH,np.double(lnoise),np.double(lobject),np.double(thres),lims,int(LIMITFILES))
 		for id in range(NUMBEROFREGIONS):
@@ -1969,8 +2099,10 @@ if __name__ == "__main__":
 
 	if LINKTRACKS=='yes':
 		for id in range(NUMBEROFREGIONS):
-			masterL=loadListOfArrays(SAVEPATH+'masterL_'+str(id)+'.npz')
-			LL=loadListOfArrays(SAVEPATH+'LL_'+str(id)+'.npz')
+			#masterL=loadListOfArrays(SAVEPATH+'masterL_'+str(id)+'.npz')
+			#LL=loadListOfArrays(SAVEPATH+'LL_'+str(id)+'.npz')
+			masterL=loadListOfArrays(SAVEPATH+'masterL.npz')
+			LL=loadListOfArrays(SAVEPATH+'LL.npz')
 			tr=linkTracks(masterL,LL)
 			if PROCESSTRACKS=='yes':
 				tr=processTracks(tr)
