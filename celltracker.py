@@ -736,8 +736,8 @@ def preProcessCyano(brightImg,chlorophyllImg):
 	segmented directly.
 	''' 
 	solidThres=0.75
-	cellMask = cv.dilate(np.uint8(bpass(chlorophyllImg,1,10)>10),None,iterations=15)
-	processedBrightfield = bpass(brightImg,1,10)>10
+	cellMask = cv.dilate(np.uint8(bpass(chlorophyllImg,1,10)>50),None,iterations=15)
+	processedBrightfield = bpass(brightImg,1,10)>1200
 
 	dilatedIm=cv.dilate(removeSmallBlobs(processedBrightfield*cellMask,75),None,iterations=2)
 #	dilatedIm=(removeSmallBlobs(processedBrightfield*cellMask,15))
@@ -1788,7 +1788,7 @@ def addCellAge(trIn):
 			else:
 				divisionTime=trI[i][0,2]	
 			tStart=trI[i][0,2]-divisionTime-1
-			trI[i][0,-1]=tStart
+			trI[i][0,-1]=np.max((tStart,0))
 			trI[i][1:,-1]=trI[i][0,-1]+np.cumsum(np.diff(trI[i][:,2]))
 			if trI[i][0,-1]>0:
 				trI[i]=np.vstack((-1*np.ones((tStart,trI[i].shape[1])),trI[i]))
@@ -1811,6 +1811,8 @@ def addCellAge(trIn):
 				trI[i]=fillGap(trI[i].copy())
 
 	trOut=revertListIntoArray(trI)
+
+	trOut=trOut[np.diff(trOut[:,2])>0,:]
 	return trOut
 
 def fillGap(tr):
