@@ -737,11 +737,10 @@ def preProcessCyano(brightImg,chlorophyllImg):
 	''' 
 	solidThres=0.75
 	cellMask = cv.dilate(np.uint8(bpass(chlorophyllImg,1,10)>50),None,iterations=15)
-	processedBrightfield = bpass(brightImg,1,10)>1200
+	processedBrightfield = bpass(brightImg,1,10)>25
 
 	dilatedIm=cv.dilate(removeSmallBlobs(processedBrightfield*cellMask,75),None,iterations=2)
 #	dilatedIm=(removeSmallBlobs(processedBrightfield*cellMask,15))
-
 	if np.sum(cellMask==0):
 		seedPt = ((1-cellMask).nonzero()[0][10],(1-cellMask).nonzero()[1][10])
 
@@ -1468,8 +1467,10 @@ def findDaughters(trIn,merge=False):
 	tr[tr[:,5]<meanW,5]=meanW
 	#Find and match division events
 	mList0=fixTracks(tr,2.5,[2,6])
-	
-	mList1=mList0[mList0[:,3]<meanL/2,:]
+	if np.sum(mList0[:,3]<meanL/2):	
+		mList1=mList0[mList0[:,3]<meanL/2,:]
+	else:
+		mList1=mList0.copy()
 	divData1=matchIndices(mList1.take([0,1,3],axis=1),'Distance')
 
 	mList2=mList0.copy()
