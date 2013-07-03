@@ -285,6 +285,30 @@ def bwlabel(bwImg):
 			cv.drawContours( bw, csl, i, 0, thickness=-1)
 	return np.uint16(bw)
 
+def traceOutlines(trT,dist,size):
+	'''
+	ImgOut=traceOutlines(trT) Trace the outline of every cell 
+	in the array trT (trT should contain the tr data of a single time).
+	'''
+
+	bw=np.zeros(size)
+	csl=[]
+	for pt in trT:
+		boundPt=getBoundingBox(pt,dist)
+		dp=np.array(([[[int(round(boundPt[0,0])),int(round(boundPt[0,1]))]]]),dtype=np.int32)
+		for p in boundPt:
+			dp=np.vstack((dp,np.array(([[[int(round(p[0])),int(round(p[1]))]]]),dtype=np.int32)))
+		csl.append(dp)
+	k=0
+	numC=int(len(csl))
+	for i in range(numC):
+		if len(csl[i])>0:
+			k=k+1	
+			cv.drawContours(bw,csl,i,k,thickness=-1)
+		else:
+			cv.drawContours(bw,csl,i,0,thichness=-1)
+	return bw
+
 def removeSmallBlobs(bwImg,bSize=10):
 	'''
 	imgOut=removeSmallBlobs(bwImg,bSize) removes processes a binary image
@@ -418,7 +442,7 @@ def dilateConnected(imgIn,nIter):
 	for i in range(1,bwLD.max()+1):
 		imgOut=imgOut +  np.double(cv.dilate(np.uint16(bwLD==i),
 			                   None,iterations=(nIter+2)))
-	dilImg=cv.dilate(imgIn,None,iterations=nIter)
+	dilImg=cv.dilate(bwImgD,None,iterations=nIter)
 	skelBnd = skeletonTransform(np.uint8(imgOut>1))
 	skelBnd = cv.dilate(skelBnd,None,iterations=1)
 
@@ -723,6 +747,7 @@ def processImage(imgIn,scaleFact=1,sBlur=0.5,sAmount=0,lnoise=1,
 	imgU=(unsharp(img,sBlur,sAmount))
 	imgB=bpass(imgU,lnoise,lobject).copy()
 	bwImg=np.uint8(np.double(imgB)>thres)
+	#Dilate cells while maintaining them unconnected
 	#Segment Cells accorging to solidity
 	bwImg=segmentCells(bwImg>0,regionprops(bwImg>0,scaleFact)[:,6],
 			   solidThres,2)	
@@ -730,6 +755,8 @@ def processImage(imgIn,scaleFact=1,sBlur=0.5,sAmount=0,lnoise=1,
 	mLength=np.mean(regionprops(bwImg>0,scaleFact)[:,2])
 	bwImg=segmentCells(bwImg>0,-regionprops(bwImg>0,scaleFact)[:,2],
 			   -lengthThres*mLength,2)	
+	bwImg=removeSmallBlobs(bwImg,100)
+	bwImg=dilateConnected(bwImg,2)
 	return bwImg
 	#Segment cells according to width (currently not used)
 	bwImg=segmentCells(bwImg>0,-regionprops(bwImg>0,scaleFact)[:,3],
@@ -812,7 +839,11 @@ def trackCells(fPath,lnoise=1,lobject=8,thres=3,lims=np.array([[0,-1]]),maxFiles
 		print(fPath+fname)
 		k=k+1
 		progress(np.double(k)/np.double(kmax))
-		img=cv.imread(fPath+fname,-1)
+		img0=cv.imread(fPath+fname,-1)
+		if len(img0)==0:
+			img=img.copy()
+		else:
+			img=img0.copy()	
 		img=cv.transpose(img)
 		for id in range(len(lims)):
 			imgCropped[id]=img[lims[id,0]:lims[id,1],:]
@@ -904,8 +935,11 @@ def processTracks(trIn):
 	# (do it twice because the first time around is reorganizes the 
 	# trackIDs so that the mother is on the left).
 	
+
 	print "Smoothing Length"
 	tr=smoothLength(trIn)
+	tr=removeShortTracks(tr,1)	
+	tr,d=findDaughters(tr,merge=True)
 	print "Splitting Tracks"
 	tr=splitTracks(tr)
 	print "Finding division events, Merging tracks"
@@ -918,8 +952,8 @@ def processTracks(trIn):
 	print "find family IDs"
 	tr=findFamilyID(tr)
 	print "match family IDs"
+#	tr=matchFamilies(tr)	
 	tr=matchFamilies(tr)	
-	#tr=matchFamilies(tr)	
 
 	print "fix family IDs"
 	#tr=fixFamilies(tr)	
@@ -1069,7 +1103,33 @@ def removeShortTracks(tr,shortTrack=3):
 	trS=revertListIntoArray(trT)
 	return trS
 	
+def matchTracksOverlap(inList1,inList2,dist,timeRange):
+	matchList=np.zeros((1,3))
 
+
+	for pts in inList1:
+		boxPts=getBoundingBox(pts,dist)
+		nearPts=inList2[(inList2[:,2]<=(pts[2]+timeRange[1])) &
+				(inList2[:,2]>=(pts[2]-timeRange[0])),:]
+
+		dividingImg=traceOutlines([pts],dist,(250,1200))
+		
+		matchingImg=traceOutlines(nearPts,1,(250,1200))	
+
+		areaList=labelOverlap(dividingImg,matchingImg)
+		if np.sum(areaList)==0:
+			areaList=areaList+0
+		elif areaList.shape[0]==1:
+			areaList[0][0]=pts[3]
+			areaList[0][1]=nearPts[areaList[0][1]-1,3]		
+		else:
+			for i in range(len(areaList)):
+				areaList[i,0]=pts[3]
+				areaList[i,1]=nearPts[areaList[i,1]-1,3]
+
+		matchList=np.vstack((matchList,areaList))
+
+	return matchList
 
 def matchTracks(inList1,inList2,dist,timeRange):
 	'''
@@ -1121,21 +1181,22 @@ def matchTracks(inList1,inList2,dist,timeRange):
 			#Compute the distance between each one and the track	
 			
 
+			angleDot=10*(1-np.cos(np.abs(pts[6]-inPts[:,6])*np.pi/180))+1
+			
 			VL=eucledianDistances(pole1,poleIn1)
-			VL=VL[0][0]
+			VL=angleDot*VL[0][0]
 			VR=eucledianDistances(pole2,poleIn2)
-			VR=VR[0][0]
+			VR=angleDot*VR[0][0]
 			VC=eucledianDistances(np.array([pts[0:2]]),inPts[:,0:2])	
-			VC=VC[0]
+			VC=angleDot*VC[0]
 			
 			V21=eucledianDistances(pole2,poleIn1)
-			V21=V21[0][0]
+			V21=angleDot*V21[0][0]
 			V12=eucledianDistances(pole1,poleIn2)
-			V12=V12[0][0]
+			V12=angleDot*V12[0][0]
 
 			T=10*abs(inPts[:,2]-pts[2]-1)
 			#Put the possible candidates into an array		
-			
 			for id in range(len(VL)):
 				V=np.array([VL[id],VR[id],VC[id],V12[id],V21[id]])
 				Dist=np.array([[pts[3],inPts[id,3],
@@ -1482,8 +1543,7 @@ def splitTracks(trIn):
 			k=k+1	
 
 	trOut=revertListIntoArray(trI)		
-	trOut=removeShortTracks(trOut,1)	
-	trOut=removeShortCells(trOut,7.5)	
+#	trOut=removeShortCells(trOut,20)	
 	
 	return trOut
 
@@ -1499,12 +1559,13 @@ def findDaughters(trIn,merge=False):
 	tr[tr[:,4]<meanL,4]=meanL
 	tr[tr[:,5]<meanW,5]=meanW
 	#Find and match division events
-	
-	inList0=tr[(tr[:,8]==tr[:,9])&(tr[:,8]>0),:]
-	inList1=tr[(tr[:,8]>0)&(tr[:,9]==0),:]	
-	mList=matchTracks(inList1,inList0,2,[0,2])
-	divData0=matchIndices(mList.take([0,1,3],axis=1),'Distance')	
-	
+	if len(trIn[0,:])>8:	
+		inList0=tr[(tr[:,8]==tr[:,9])&(tr[:,8]>0),:]
+		inList1=tr[(tr[:,8]>0)&(tr[:,9]==0),:]	
+		mList=matchTracks(inList1,inList0,2,[0,2])
+		divData0=matchIndices(mList.take([0,1,3],axis=1),'Distance')	
+	else:
+		divData0=np.zeros((1,3))	
 	tr0=tr.copy()
 	tr0[:,5]=tr0[:,5]/3.	
 	#mList0=fixTracks(tr,2.5,[2,6])
@@ -1514,7 +1575,6 @@ def findDaughters(trIn,merge=False):
 	else:
 		mList1=mList0.copy()
 	divData1=matchIndices(mList1.take([0,1,3],axis=1),'Distance')
-	
 	for dd in divData0:
 		divData1[divData1[:,1]==dd[1],:]=0
 		divData1[divData1[:,0]==dd[0],:]=0
@@ -1537,6 +1597,7 @@ def findDaughters(trIn,merge=False):
 
 	if merge:
 		trOut=mergeIndividualTracks(trIn.copy(),divData.copy())
+		trOut=smoothLength(trOut)
 	else:
 		trOut=trIn.copy()
 	return trOut,divData
@@ -1561,6 +1622,11 @@ def mergeIndividualTracks(trIn,divData):
 				divData[divData[:,0]==daughterCell,0]=motherCell
 	trOut=revertListIntoArray(trT)
 	
+        trOut=trOut[trOut[:,2].argsort(-1,'mergesort'),]
+        trOut=trOut[trOut[:,3].argsort(-1,'mergesort'),]
+                                
+        trOut[(np.diff(trOut[:,2])==0)&(np.diff(trOut[:,3])==0),:]=0
+        trOut=trOut[trOut[:,0]>0,:]
 	
 	return trOut
 
@@ -1572,7 +1638,6 @@ def mergeTracks(trIn):
 	trIn=removeShortTracks(trIn,1)
 	
 	trOut,divData=findDaughters(trIn,merge=True)
-	trOut,divData=findDaughters(trOut,merge=True)
 	#Get division data
 	trOut,divData=findDaughters(trOut)
 	masterEndList=trOut[np.diff(trOut[:,3])>0,:]
@@ -1631,7 +1696,7 @@ def mergeTracks(trIn):
 	trOut=trOut[trOut[:,2].argsort(-1,'mergesort'),]
 	trOut=trOut[trOut[:,3].argsort(-1,'mergesort'),]
 
-	trOut[(np.diff(trOut[:,2])==0)&(np.diff(trOut[:,3])==0),:]==0
+	trOut[(np.diff(trOut[:,2])==0)&(np.diff(trOut[:,3])==0),:]=0
 	trOut=trOut[trOut[:,0]>0,:]
 
 
@@ -1797,7 +1862,7 @@ def matchFamilies(trIn):
         trOut=trOut[trOut[:,2].argsort(-1,'mergesort'),]
         trOut=trOut[trOut[:,3].argsort(-1,'mergesort'),]
         
-        trOut[(np.diff(trOut[:,2])==0)&(np.diff(trOut[:,3])==0),:]==0
+        trOut[(np.diff(trOut[:,2])==0)&(np.diff(trOut[:,3])==0),:]=0
         trOut=trOut[trOut[:,0]>0,:]
 
 	trOut=findFamilyID(trOut[:,0:10])	
