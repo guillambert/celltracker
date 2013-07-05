@@ -688,13 +688,15 @@ def putLabelOnImg(fPath,tr,dataRange,dim,num):
 		plt.hold(True)
 		trT=trTime[t]
 		if np.size(trT)>1:
+			img=traceOutlines(trT,0.85,(250,1200))
+			plt.imshow(img)	
 			for cell in range(len(trT[:,3])):
 				'''plt.text(trT[cell,0],trT[cell,1],
 				            str(trT[cell,dim])+', '+str(trT[cell,3]),
 					    color='w',fontsize=6)
 				'''
-				boxPts=getBoundingBox(trT[cell,:])
-				plt.plot(boxPts[:,0],boxPts[:,1],'gray',lw=0.5)
+				#boxPts=getBoundingBox(trT[cell,:])
+				#plt.plot(boxPts[:,0],boxPts[:,1],'gray',lw=0.5)
 				
 				plt.text(trT[cell,0],trT[cell,1],
 					 str(trT[cell,dim]),color='k',fontsize=5)
@@ -705,6 +707,7 @@ def putLabelOnImg(fPath,tr,dataRange,dim,num):
 
 #				if bwI[np.floor(trT[cell,1]),np.floor(trT[cell,0])]>0:
 #					bwI=floodFill(bwI.copy(),(trT[cell,1],trT[cell,0]),trT[cell,9])
+			
 #		plt.imshow(bwI)
 #		plt.clim((0,30))
 		plt.title(str(t))
@@ -938,8 +941,11 @@ def processTracks(trIn):
 
 	print "Smoothing Length"
 	tr=smoothLength(trIn)
-	tr=removeShortTracks(tr,1)	
-	tr,d=findDaughters(tr,merge=True)
+		
+#	tr=removeShortTracks(tr,1)	
+	print "Bridging track gaps"	
+	tr=joinTracks(tr,2.5,[4,6])
+	
 	print "Splitting Tracks"
 	tr=splitTracks(tr)
 	print "Finding division events, Merging tracks"
@@ -1021,11 +1027,27 @@ def fixTracks(tr,dist,timeRange):
 	#Find track starts
 	masterStartList=tr[np.roll(np.diff(tr[:,3])>0,1),:]
 	
-	listOfMatches=matchTracks(masterEndList,masterStartList,
+	listOfMatches=matchTracksOverlap(masterEndList,masterStartList,
 				  dist,timeRange)
 
 	return listOfMatches	
 	#Reassign the track IDs
+
+def joinTracks(trIn,dist,dataRange):
+	'''
+	Merge the track ends with track starts. Do not care about cell divisions.
+	'''	
+
+	mList0=fixTracks(trIn,dist,dataRange)
+
+	matchData=matchIndices(mList0,'Area')
+
+
+	trOut=mergeIndividualTracks(trIn.copy(),matchData.copy())
+
+	trOut=smoothLength(trOut)
+	
+	return trOut
 
 def reassignTrackID(tr,matchList):
 	'''
@@ -1562,19 +1584,17 @@ def findDaughters(trIn,merge=False):
 	if len(trIn[0,:])>8:	
 		inList0=tr[(tr[:,8]==tr[:,9])&(tr[:,8]>0),:]
 		inList1=tr[(tr[:,8]>0)&(tr[:,9]==0),:]	
-		mList=matchTracks(inList1,inList0,2,[0,2])
-		divData0=matchIndices(mList.take([0,1,3],axis=1),'Distance')	
+		mList=matchTracksOverlap(inList1,inList0,2,[0,2])
+		divData0=matchIndices(mList,'Area')	
 	else:
 		divData0=np.zeros((1,3))	
 	tr0=tr.copy()
-	tr0[:,5]=tr0[:,5]/3.	
-	#mList0=fixTracks(tr,2.5,[2,6])
-	mList0=fixTracks(tr0,4,[5,10])
-	if np.sum(mList0[:,3]<meanL):	
-		mList1=mList0[mList0[:,3]<meanL,:]
-	else:
-		mList1=mList0.copy()
-	divData1=matchIndices(mList1.take([0,1,3],axis=1),'Distance')
+	mList0=fixTracks(tr0,2.5,[2,6])
+	#if np.sum(mList0[:,3]<meanL):	
+#		mList1=mList0[mList0[:,3]<meanL,:]
+#	else:
+	mList1=mList0.copy()
+	divData1=matchIndices(mList1,'Area')
 	for dd in divData0:
 		divData1[divData1[:,1]==dd[1],:]=0
 		divData1[divData1[:,0]==dd[0],:]=0
@@ -1589,18 +1609,13 @@ def findDaughters(trIn,merge=False):
 
 	mList2=mList2[mList2[:,0]>0,:]
 
-	divData2=matchIndices(mList2.take([0,1,3],axis=1),'Distance')
+	divData2=matchIndices(mList2,'Area')
 	
 	divData=np.vstack((divData0,divData1,divData2))
 	divData=divData[divData[:,0].argsort(),]
 	divData=unique_rows(divData)
 
-	if merge:
-		trOut=mergeIndividualTracks(trIn.copy(),divData.copy())
-		trOut=smoothLength(trOut)
-	else:
-		trOut=trIn.copy()
-	return trOut,divData
+	return divData
 
 def mergeIndividualTracks(trIn,divData):
 	'''
@@ -1613,13 +1628,12 @@ def mergeIndividualTracks(trIn,divData):
 		motherCell=int(idList[k])
 		daughterCell=divData[divData[:,0]==motherCell,1].astype('int')
 		if len(daughterCell)==1:
-			if checkContinuous(trT,motherCell,daughterCell):
-				trT[motherCell]=np.vstack((trT[motherCell],trT[daughterCell]))
-				trT[motherCell][:,3]=motherCell
-				trT[daughterCell]=[]
-				idList[idList==daughterCell]=motherCell
-				divData[divData[:,0]==motherCell,0]=0
-				divData[divData[:,0]==daughterCell,0]=motherCell
+			trT[motherCell]=np.vstack((trT[motherCell],trT[daughterCell]))
+			trT[motherCell][:,3]=motherCell
+			trT[daughterCell]=[]
+			idList[idList==daughterCell]=motherCell
+			divData[divData[:,0]==motherCell,0]=0
+			divData[divData[:,0]==daughterCell,0]=motherCell
 	trOut=revertListIntoArray(trT)
 	
         trOut=trOut[trOut[:,2].argsort(-1,'mergesort'),]
@@ -1635,11 +1649,12 @@ def mergeTracks(trIn):
 
 	'''
 	#Fix tracks that skip frames without divisions
-	trIn=removeShortTracks(trIn,1)
+	#trOut=removeShortTracks(trIn,1)
+	trOut=trIn.copy()
 	
-	trOut,divData=findDaughters(trIn,merge=True)
 	#Get division data
-	trOut,divData=findDaughters(trOut)
+	divData=findDaughters(trOut)
+	
 	masterEndList=trOut[np.diff(trOut[:,3])>0,:]
 	for i in np.unique(masterEndList[:,3]):
 		dd=divData[divData[:,0]==i,:]
@@ -1655,15 +1670,19 @@ def mergeTracks(trIn):
 			orphanCoordinates=np.vstack((orphanCoordinates,trOut[trOut[:,3]==i,:][0]))
 
 	#Link between orphan tracks at birth and track ends
-	mList=matchTracks(masterEndList,orphanCoordinates,4,[3,8])
+	mList=matchTracksOverlap(masterEndList,orphanCoordinates,4,[3,8])
+	mList=mList[mList[:,0]>0,:]
 	if mList.any():
-		matchData=matchIndices(mList.take([0,1,3],axis=1),'Distance')
+		matchData=matchIndices(mList,'Area')
 	else:
 		matchData=np.zeros((3,1))
 
 
 	trT=splitIntoList(trOut,3)
-	for i in np.unique(trOut[:,3]):
+	ids=np.unique(trOut[:,3])
+	ids=np.flipud(ids)
+	for k in range(len(ids)):
+		i=ids[k]
 		divD=divData[divData[:,0]==i,:]
 		mData=matchData[matchData[:,0]==i,:]
 		if len(divD)==2:
@@ -1681,15 +1700,39 @@ def mergeTracks(trIn):
 			trT[int(mData[0,1])][0,8]=i
 			trT[int(mData[0,1])][0,9]=i
 		elif (len(mData)==1)and(len(divD)==0):
-			trT[int(i)][-1,8]=mData[0,1]
-			trT[int(i)][-1,9]=mData[0,1]
-			trT[int(mData[0,1])][0,8]=i
-			trT[int(mData[0,1])][0,9]=i
+			if checkContinuous(trT,int(i),int(mData[0,1])):
+				trT[int(i)][:,3]=mData[0,1]
+				trT[int(i)][1:,8:10]=0
+				trT[int(mData[0,1])][:-1,8:10]=0
+				trT[int(mData[0,1])]=np.vstack((trT[int(i)],trT[int(mData[0,1])]))
+#				trT[int(mData[0,1])]=[]
+				divData[divData[:,0]==i,0]=mData[0,1]
+				divData[divData[:,1]==i,1]=mData[0,1]
+				matchData[matchData[:,0]==i,0]=mData[0,1]
+				matchData[matchData[:,1]==i,1]=mData[0,1]
+#				ids[ids==i]=mData[0,1]
+			else:	
+				trT[int(i)][-1,8]=mData[0,1]
+				trT[int(i)][-1,9]=mData[0,1]
+				trT[int(mData[0,1])][0,8]=i
+				trT[int(mData[0,1])][0,9]=i
 		elif (len(mData)==0)and(len(divD)==1):	
-			trT[int(i)][-1,8]=divD[0,1]
-			trT[int(i)][-1,9]=divD[0,1]
-			trT[int(divD[0,1])][0,8]=i
-			trT[int(divD[0,1])][0,9]=i
+			if checkContinuous(trT,int(i),int(divD[0,1])):
+				trT[int(i)][:,3]=divD[0,1]
+				trT[int(i)][1:,8:10]=0
+				trT[int(divD[0,1])][:-1,8:10]=0
+				trT[int(divD[0,1])]=np.vstack((trT[int(i)],trT[int(divD[0,1])]))
+#				trT[int(divD[0,1])]=[]
+				divData[divData[:,0]==i,0]=divD[0,1]
+				divData[divData[:,1]==i,1]=divD[0,1]
+				matchData[matchData[:,0]==i,0]=divD[0,1]
+				matchData[matchData[:,1]==i,1]=divD[0,1]
+#				ids[ids==i]=divD[0,1]
+			else:	
+				trT[int(i)][-1,8]=divD[0,1]
+				trT[int(i)][-1,9]=divD[0,1]
+				trT[int(divD[0,1])][0,8]=i
+				trT[int(divD[0,1])][0,9]=i
 
 	trOut=revertListIntoArray(trT)
 
@@ -1815,10 +1858,12 @@ def matchFamilies(trIn):
 
 	freeID=np.setdiff1d(np.arange(2*np.max(trIn[:,3])),np.unique(trIn[:,3]))
 	freeID=freeID[1:].copy()
+	trIn=np.vstack((trIn,trIn[0]))
+	trIn[-1,:]=0
+	trIn[-1,3]=2*np.max(trIn[:,3])
 
 	trFam=splitIntoList(trIn,10)
 	trI=splitIntoList(trIn,3)	
-
 	
 	famStart=trIn[0]
 	for tt in trFam:
@@ -1831,9 +1876,10 @@ def matchFamilies(trIn):
 		famStart[famStart[:,10]==i,:]=0
 	famStart=famStart[famStart[:,0]>0,:]
 
-	listOfMatches=matchTracks(famStart,trIn,2.5,[4,-1])	
+	listOfMatches=matchTracksOverlap(famStart,trIn,2.5,[4,-1])	
 
-	matchData=matchIndices(listOfMatches.take([0,1,3],axis=1),'Distance')
+	matchData=matchIndices(listOfMatches,'Area')
+#	return famStart,matchData
 	for md in matchData:
 		trI[int(md[0])][0,8:10]=md[1]
 		
@@ -1848,10 +1894,11 @@ def matchFamilies(trIn):
 
 		daughterID1=trI[int(md[1])][-1,8]
 		daughterID2=trI[int(md[1])][-1,9]
-		if daughterID1>0:
+		print md[1],daughterID1,daughterID2,freeID[0]
+		if (daughterID1>0)&(daughterID1<=len(trI)):
 			if len(trI[int(daughterID1)]):
 				trI[int(daughterID1)][0,8:10]=freeID[0]
-		if daughterID2>0:
+		if (daughterID2>0)&(daughterID2<=len(trI)):
 			if len(trI[int(daughterID2)]):
 				trI[int(daughterID2)][0,8:10]=freeID[0]
 
@@ -1895,7 +1942,8 @@ def fixFamilies(trIn):
 
 def addCellAge(trIn):
 	'''
-	Adds the age of the cells in the last column
+	Adds the age of the cells in the last column.
+	It also fills in the blank and missing data (eg. when track skip a time)
 	'''	
 
 	trIn=np.hstack((trIn,np.zeros((len(trIn),1))))
