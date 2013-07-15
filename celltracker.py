@@ -189,7 +189,8 @@ def unsharp(img,sigma=5,amount=10):
 	'''
 	if sigma:
 		img=np.double(img)
-		imgB=cv.GaussianBlur(img,(img.shape[0]-1,img.shape[1]-1),sigma)
+		#imgB=cv.GaussianBlur(img,(img.shape[0]-1,img.shape[1]-1),sigma)
+		imgB=cv.GaussianBlur(img,(img.shape[0]-(img.shape[0]+1)%2,img.shape[1]-(img.shape[1]+1)%2),sigma)
 		imgS = img*(1+amount) + imgB*(-amount)
 		if amount:
 			return imgS
@@ -397,36 +398,57 @@ def avgCellInt(rawImg,bwImg):
 	return np.double(avgCellI)
 
 
-def segmentCells(bwImg,propIndex,pThreshold,iterN=2):
+def segmentCells(bwImg,iterN=1):
 	'''
 	imgOut = segmentCells(bwImg,propIndex,pThreshold,iterN=2) applies 
 	a watershed transformation to the regions in bwImg whose property 
 	propIndex are smaller than pThreshold.
 	'''
 	labelImg=bwlabel(bwImg).copy()
+	
+	lowImg=np.uint16(labelImg>0)
+	markers=cv.distanceTransform(np.uint8(lowImg),cv.cv.CV_DIST_L2,5)
+	markers32=np.int32(markers)
+
+	rgbImg=np.zeros((np.size(lowImg,0),np.size(lowImg,1),3))
+	rgbImg[:,:,0]=np.uint8(lowImg>0)
+	rgbImg[:,:,1]=np.uint8(lowImg>0)
+	rgbImg[:,:,2]=np.uint8(lowImg>0)	
+
+	cv.watershed(np.uint8(rgbImg),markers32)
+	m=cv.convertScaleAbs(markers32)-1
+	m=dilateConnected(m,iterN)
+	maskImg=(np.ones(((np.size(lowImg,0),np.size(lowImg,1)))) - m + lowImg)==1
+	segImg=np.multiply(maskImg,labelImg)>0
+
+	return np.double(segImg)
+
+def fragmentCells(bwImg,propIndex,thres,iterN=1):
+	'''
+
+	'''
+
+	labelImg=bwlabel(bwImg).copy()	
 	lowImg=np.double(np.zeros((np.size(labelImg,0),np.size(labelImg,1))))
-	lowSIndex=np.nonzero(propIndex<pThreshold)
+	lowSIndex=np.nonzero(propIndex<thres)
+	
 	if lowSIndex[0].any():
 		for id in np.transpose(lowSIndex):
 			lowImg = lowImg + np.double(labelImg==(id+1))
-		lowImg=np.uint16(lowImg)
-		markers=cv.dilate(lowImg,None,iterations=iterN) + \
-			cv.erode(lowImg,None,iterations=iterN)
-		markers32=np.int32(markers)
-		rgbImg=np.zeros((np.size(lowImg,0),np.size(lowImg,1),3))
-		rgbImg[:,:,0]=np.uint8(lowImg>0)
-		rgbImg[:,:,1]=np.uint8(lowImg>0)
-		rgbImg[:,:,2]=np.uint8(lowImg>0)	
-		cv.watershed(np.uint8(rgbImg),markers32)
-		m=cv.convertScaleAbs(markers32)-1
-#		m=cv.dilate(m,None,iterations=1)
+		lowImg=cv.erode(np.uint8(lowImg),None,iterations=iterN)
+		m=segmentCells(lowImg)
+
 		m=dilateConnected(m,iterN)
-		maskImg=(np.ones(((np.size(lowImg,0),np.size(lowImg,1)))) - 
-			 m + lowImg)==1
-		segImg=np.multiply(maskImg,labelImg)>0
+		
+		for id in np.transpose(lowSIndex):
+			bwImg = bwImg - np.double(labelImg==(id+1))	
+		return np.uint8(bwImg+m)
+
 	else:
 		return bwImg
-	return np.double(segImg)
+
+	
+
 
 def dilateConnected(imgIn,nIter):
 	"""
@@ -674,22 +696,23 @@ def putLabelOnImg(fPath,tr,dataRange,dim,num):
 		dataRange=range(len(tifList))
 	for t in dataRange:
 		time_start=time.time()
+		trT=trTime[t]
 		if tifList:
 			fname = tifList[t] 
 			print fPath+fname
 	                img=cv.imread(fPath+fname,-1)
 	                img=cv.transpose(img)
 			bwImg=processImage(img,scaleFact=1,sBlur=0.5,
-				   sAmount=0,lnoise=1,lobject=8,
-				   thres=2,solidThres=0.65,
-				   lengthThres=1.5,widthThres=20)
+				   sAmount=0,lnoise=1,lobject=7,
+				   boxSize=15,solidThres=0.65)
 			plt.imshow(bwImg)
 			bwI=np.double(bwImg.copy())
+		else:
+			if np.size(trT)>1:
+				img=traceOutlines(trT,0.85,(950,1200))
+				plt.imshow(img)	
 		plt.hold(True)
-		trT=trTime[t]
 		if np.size(trT)>1:
-			img=traceOutlines(trT,0.85,(250,1200))
-			plt.imshow(img)	
 			for cell in range(len(trT[:,3])):
 				'''plt.text(trT[cell,0],trT[cell,1],
 				            str(trT[cell,dim])+', '+str(trT[cell,3]),
@@ -713,7 +736,7 @@ def putLabelOnImg(fPath,tr,dataRange,dim,num):
 		plt.title(str(t))
 		plt.hold(False)
 		plt.xlim((0,950))
-		plt.ylim((25,220))
+		plt.ylim((25,1220))
 		
 #		cv.imwrite(fPath+'Fig'+str(t)+'.jpg',np.uint8(bwI))
 #		plt.savefig(fPath+"Fig"+str(t)+".png",dpi=(120))
@@ -722,13 +745,11 @@ def putLabelOnImg(fPath,tr,dataRange,dim,num):
 		plt.clf()	
 	
 def processImage(imgIn,scaleFact=1,sBlur=0.5,sAmount=0,lnoise=1,
-		 lobject=8,thres=3,solidThres=0.65,
-		 lengthThres=1.5,widthThres=20):
+		 lobject=8,boxSize=15,solidThres=0.85):
 	'''
 	This is the core of the image analysis part of the tracking algorithm.
 	bwImg=processImage(imgIn,scaleFact=1,sBlur=0.5,sAmount=0,lnoise=1,
-	                   lobject=8,thres=3,solidThres=0.65,lengthThres=1.5,
-			   widthThres=20) 
+	                   lobject=8,boxSize=15,solidThres=0.65) 
 	returns a black and white image processed from 
 		a grayscale input (imgIn(.
 	scaleFact: scales the image by this factor prior 
@@ -738,7 +759,7 @@ def processImage(imgIn,scaleFact=1,sBlur=0.5,sAmount=0,lnoise=1,
 	sAmount = magnitude of the unsharp mask used to process the image
 	lnoise = size of the typical noise when segmenting the image
 	lobject = typical size of the pbject to be considered
-	thres = intensity threshold used to create the black and white image
+	boxSize = size of the box used to compute the intensity threshold 
 	solidThres = size of the lowest allowed cell solidity
 	lengthThres = length of the cell at which you expect cell 
 		to start dividing (1.5 = 1.5 times the average length)
@@ -749,24 +770,17 @@ def processImage(imgIn,scaleFact=1,sBlur=0.5,sAmount=0,lnoise=1,
 		      np.size(imgIn,0)*scaleFact))
 	imgU=(unsharp(img,sBlur,sAmount))
 	imgB=bpass(imgU,lnoise,lobject).copy()
-	bwImg=np.uint8(np.double(imgB)>thres)
+	bwImg=cv.adaptiveThreshold(np.uint8(imgB),255,cv.ADAPTIVE_THRESH_GAUSSIAN_C,cv.THRESH_BINARY,int(boxSize),0)
+#	bwImg=np.uint8(np.double(imgB)>thres)
 	#Dilate cells while maintaining them unconnected
-	#Segment Cells accorging to solidity
-	bwImg=segmentCells(bwImg>0,regionprops(bwImg>0,scaleFact)[:,6],
-			   solidThres,2)	
-	#Segment cells according to length
-	mLength=np.mean(regionprops(bwImg>0,scaleFact)[:,2])
-	bwImg=segmentCells(bwImg>0,-regionprops(bwImg>0,scaleFact)[:,2],
-			   -lengthThres*mLength,2)	
-	bwImg=removeSmallBlobs(bwImg,100)
-	bwImg=dilateConnected(bwImg,2)
-	return bwImg
-	#Segment cells according to width (currently not used)
-	bwImg=segmentCells(bwImg>0,-regionprops(bwImg>0,scaleFact)[:,3],
-			   -widthThres,3)	
-	bwImg=np.uint8((bwImg>0))
+	bwImg=dilateConnected(bwImg,1)
+	bwImg=segmentCells(bwImg>0)
+	bwImg=fragmentCells(bwImg>0,regionprops(bwImg)[:,6],solidThres)
 	
+	bwImg=removeSmallBlobs(bwImg,100)
+	bwImg=dilateConnected(bwImg,1)
 	return bwImg
+	
 
 def preProcessCyano(brightImg,chlorophyllImg):
 	'''
@@ -787,7 +801,7 @@ def preProcessCyano(brightImg,chlorophyllImg):
 	else:
 		imgOut=dilateConnected(1-dilatedIm,2)
 
-	imgOut=np.uint8(processImage(imgOut.copy(),thres=0))
+	#imgOut=np.uint8(processImage(imgOut.copy(),thres=0))
 
 #	imgOut=processImage(-imgOut+(bpass(chlorophyllImg,1,10)>10),thres=0)
 
@@ -797,16 +811,16 @@ def preProcessCyano(brightImg,chlorophyllImg):
 #			   solidThres,2)	
 	return np.uint8(imgOut)
 
-def trackCells(fPath,lnoise=1,lobject=8,thres=3,lims=np.array([[0,-1]]),maxFiles=0):
+def trackCells(fPath,lnoise=1,lobject=8,boxSize=15,lims=np.array([[0,-1]]),maxFiles=0):
 	'''
 	This prepares the data necessary to track the cells.
-	masterL,LL,AA=trackCells(fPath,lnoise=1,lobject=8,thres=5,lims=0)
+	masterL,LL,AA=trackCells(fPath,lnoise=1,lobject=8,boxSize=15,lims=0)
 	processes the files in fPath.
 	
 	lims is a Nx2 list containing the limits of each subregions.
 	'''
 	#Initialize variables
-	sBlur=0
+	sBlur=0.5
 	sAmount=0
 	bPassNum=1
 	scaleFact=1
@@ -852,9 +866,9 @@ def trackCells(fPath,lnoise=1,lobject=8,thres=3,lims=np.array([[0,-1]]),maxFiles
 			imgCropped[id]=img[lims[id,0]:lims[id,1],:]
 			bwImg[id]=processImage(imgCropped[id],scaleFact,sBlur,
 					   sAmount,lnoise,lobject,
-					   thres,solidThres,lengthThres)
+					   boxSize,solidThres)
 			bwL[id]=bwlabel(bwImg[id])
-			fileNum=int(re.findall(r'\d+',fname)[0])
+			fileNum=k-1
 			if bwL[id].max()>5:
 				
 				regionP[id]=regionprops(bwImg[id],scaleFact)
@@ -939,12 +953,15 @@ def processTracks(trIn):
 	# trackIDs so that the mother is on the left).
 	
 
-	print "Smoothing Length"
-	tr=smoothLength(trIn)
-		
+	print "Smoothing Length and XY-dimensions"
+	#tr=smoothDim(trIn,4)
+	tr=smoothDim(trIn,5)
+	tr=smoothDim(tr,0)
+	tr=smoothDim(tr,1)
+
 #	tr=removeShortTracks(tr,1)	
 	print "Bridging track gaps"	
-	tr=joinTracks(tr,2.5,[4,6])
+	tr=joinTracks(tr,1.5,[2,4])
 	
 	print "Splitting Tracks"
 	tr=splitTracks(tr)
@@ -957,9 +974,7 @@ def processTracks(trIn):
 
 	print "find family IDs"
 	tr=findFamilyID(tr)
-	print "match family IDs"
 #	tr=matchFamilies(tr)	
-	tr=matchFamilies(tr)	
 
 	print "fix family IDs"
 	#tr=fixFamilies(tr)	
@@ -969,9 +984,12 @@ def processTracks(trIn):
 	
 	print "Compute elongation rate"	
 	tr=addElongationRate(tr)
-
-
 	return tr
+	
+	print "match family IDs"
+	tr=matchFamilies(tr)	
+
+
 
 def getBoundingBox(param,dist=1):
 	'''
@@ -1042,10 +1060,8 @@ def joinTracks(trIn,dist,dataRange):
 
 	matchData=matchIndices(mList0,'Area')
 
-
 	trOut=mergeIndividualTracks(trIn.copy(),matchData.copy())
 
-	trOut=smoothLength(trOut)
 	
 	return trOut
 
@@ -1124,7 +1140,7 @@ def removeShortTracks(tr,shortTrack=3):
 	
 	trS=revertListIntoArray(trT)
 	return trS
-	
+
 def matchTracksOverlap(inList1,inList2,dist,timeRange):
 	matchList=np.zeros((1,3))
 
@@ -1338,9 +1354,9 @@ def findDivs(L):
 			divTimes[i]=0
 			
 	divTimes=divLoc[0]+1.
+	divTimes[np.diff(divTimes)==1]=0
 	divTimes=divTimes[divTimes!=0]
 	divTimes=divTimes[divTimes>3]
-
 	return divTimes
 
 
@@ -1559,12 +1575,18 @@ def splitTracks(trIn):
 			trI[id][(trI[id][:,2]==x[0]),8]=k-1
 			trI[id][(trI[id][:,2]==x[0]),9]=k-1
 			trI[id][trI[id][:,2]>=x[0],3]=k
+			if len(trI[id][trI[id][:,2]>=x[0],3])==1:
+				trI[id][trI[id][:,2]>=x[0],3]=0
+#				trI[id]=np.vstack((trI[id],trI[id][-1,:]))
+#				trI[id][-1,2]=trI[id][-1,2]+1
+#				trI[id][-1,8:10]=0
 			k=k+1
 		else:
 			trI[id][:,3]=k
 			k=k+1	
 
-	trOut=revertListIntoArray(trI)		
+	trOut=revertListIntoArray(trI)	
+	trOut=trOut[trOut[:,3]>0,:]	
 #	trOut=removeShortCells(trOut,20)	
 	
 	return trOut
@@ -1589,7 +1611,7 @@ def findDaughters(trIn,merge=False):
 	else:
 		divData0=np.zeros((1,3))	
 	tr0=tr.copy()
-	mList0=fixTracks(tr0,2.5,[2,6])
+	mList0=fixTracks(tr0,2,[2,4])
 	#if np.sum(mList0[:,3]<meanL):	
 #		mList1=mList0[mList0[:,3]<meanL,:]
 #	else:
@@ -1614,7 +1636,6 @@ def findDaughters(trIn,merge=False):
 	divData=np.vstack((divData0,divData1,divData2))
 	divData=divData[divData[:,0].argsort(),]
 	divData=unique_rows(divData)
-
 	return divData
 
 def mergeIndividualTracks(trIn,divData):
@@ -1654,7 +1675,6 @@ def mergeTracks(trIn):
 	
 	#Get division data
 	divData=findDaughters(trOut)
-	
 	masterEndList=trOut[np.diff(trOut[:,3])>0,:]
 	for i in np.unique(masterEndList[:,3]):
 		dd=divData[divData[:,0]==i,:]
@@ -1670,21 +1690,26 @@ def mergeTracks(trIn):
 			orphanCoordinates=np.vstack((orphanCoordinates,trOut[trOut[:,3]==i,:][0]))
 
 	#Link between orphan tracks at birth and track ends
-	mList=matchTracksOverlap(masterEndList,orphanCoordinates,4,[3,8])
+	mList=matchTracksOverlap(masterEndList,orphanCoordinates,2,[3,6])
 	mList=mList[mList[:,0]>0,:]
+	mList=mList[mList[:,0]!=mList[:,1],:]
 	if mList.any():
 		matchData=matchIndices(mList,'Area')
 	else:
 		matchData=np.zeros((3,1))
 
-
 	trT=splitIntoList(trOut,3)
 	ids=np.unique(trOut[:,3])
 	ids=np.flipud(ids)
+	
 	for k in range(len(ids)):
 		i=ids[k]
 		divD=divData[divData[:,0]==i,:]
 		mData=matchData[matchData[:,0]==i,:]
+		if len(divD)>2:
+			divD=divD[divD[:,0]!=divD[:,1],:]
+		
+		
 		if len(divD)==2:
 			trT[int(i)][-1,8]=divD[0,1]
 			trT[int(divD[0,1])][0,8]=i
@@ -1701,6 +1726,8 @@ def mergeTracks(trIn):
 			trT[int(mData[0,1])][0,9]=i
 		elif (len(mData)==1)and(len(divD)==0):
 			if checkContinuous(trT,int(i),int(mData[0,1])):
+				if (trT[int(i)].shape[0]==1) or (trT[int(mData[0,1])].shape[0]==1):
+					trT[int(mData[0,1])][:,8:10]=0
 				trT[int(i)][:,3]=mData[0,1]
 				trT[int(i)][1:,8:10]=0
 				trT[int(mData[0,1])][:-1,8:10]=0
@@ -1718,6 +1745,8 @@ def mergeTracks(trIn):
 				trT[int(mData[0,1])][0,9]=i
 		elif (len(mData)==0)and(len(divD)==1):	
 			if checkContinuous(trT,int(i),int(divD[0,1])):
+				if (trT[int(i)].shape[0]==1) or (trT[int(divD[0,1])].shape[0]==1):
+					trT[int(divD[0,1])][:,8:10]=0
 				trT[int(i)][:,3]=divD[0,1]
 				trT[int(i)][1:,8:10]=0
 				trT[int(divD[0,1])][:-1,8:10]=0
@@ -1742,7 +1771,7 @@ def mergeTracks(trIn):
 	trOut[(np.diff(trOut[:,2])==0)&(np.diff(trOut[:,3])==0),:]=0
 	trOut=trOut[trOut[:,0]>0,:]
 
-
+	trOut[(trOut[:,8]>0)&(trOut[:,9]==0),8:10]=0
 	
 
 	return trOut
@@ -1821,12 +1850,11 @@ def findFamilyID(trIn):
 	family ID in the 10th column.
 	"""
 	trIn=np.hstack([trIn,np.zeros((len(trIn),1))])
-	trI=splitIntoList(trIn,3)
-	cellIdList=np.unique(trIn[:,3])
-	famID=-1
+	trI=splitIntoList(trIn.copy(),3)
+	cellIdList=np.unique(trIn[trIn[:,-1]==0,3])
+	famID=0
 	k=0
 	stop=False		
-	
 	
 	while len(cellIdList)>0:		
 		famID=famID+1
@@ -1835,15 +1863,17 @@ def findFamilyID(trIn):
 		while not stop:
 			famList1=famList.copy()
 			for id in famList:
-				if len(trI[int(id)])>0:
+				if len(trI[int(id)])>1:
 					famList0=np.unique(trI[int(id)][-1,8:10])
 					famList=np.unique(np.hstack([famList,
 					                     famList0]))
 			if np.array_equal(famList,famList1):
 				stop=True	
+
 		for id in famList:
 			trI[int(id)][:,-1]=famID
 		cellIdList=np.setdiff1d(cellIdList,famList)
+		
 		stop=False
 	trLong=revertListIntoArray(trI)	
 	
@@ -1854,8 +1884,7 @@ def matchFamilies(trIn):
 	This script matches the start of a new family with 
 	the closest cell.	
 	'''
-	trIn=np.hstack([trIn,np.zeros((len(trIn),1))])	
-
+	#trS=removeShortTracks(trIn,1)
 	freeID=np.setdiff1d(np.arange(2*np.max(trIn[:,3])),np.unique(trIn[:,3]))
 	freeID=freeID[1:].copy()
 	trIn=np.vstack((trIn,trIn[0]))
@@ -1875,11 +1904,9 @@ def matchFamilies(trIn):
 	for i in initialIDs:
 		famStart[famStart[:,10]==i,:]=0
 	famStart=famStart[famStart[:,0]>0,:]
-
-	listOfMatches=matchTracksOverlap(famStart,trIn,2.5,[4,-1])	
+	listOfMatches=matchTracksOverlap(famStart,trIn,3,[4,-1])	
 
 	matchData=matchIndices(listOfMatches,'Area')
-#	return famStart,matchData
 	for md in matchData:
 		trI[int(md[0])][0,8:10]=md[1]
 		
@@ -1887,6 +1914,10 @@ def matchFamilies(trIn):
 		if len(trI[int(md[1])][trI[int(md[1])][:,2]<divTime,3])==0:
 			divTime+=2
 		trI[int(md[1])][trI[int(md[1])][:,2]>=divTime,3]=freeID[0]
+		if len(trI[int(md[1])][trI[int(md[1])][:,2]>=divTime,3])==1:
+			trI[int(md[1])]=np.vstack((trI[int(md[1])],trI[int(md[1])][-1,:]))
+			trI[int(md[1])][-2,8:10]=0
+			trI[int(md[1])][-1,2]=trI[int(md[1])][-1,2]+1
 		trI[int(md[1])][trI[int(md[1])][:,2]==(divTime),8]=md[1]
 		trI[int(md[1])][trI[int(md[1])][:,2]==(divTime),9]=md[1]		
 		trI[int(md[1])][trI[int(md[1])][:,2]==(divTime-1),8]=md[0]
@@ -1894,7 +1925,6 @@ def matchFamilies(trIn):
 
 		daughterID1=trI[int(md[1])][-1,8]
 		daughterID2=trI[int(md[1])][-1,9]
-		print md[1],daughterID1,daughterID2,freeID[0]
 		if (daughterID1>0)&(daughterID1<=len(trI)):
 			if len(trI[int(daughterID1)]):
 				trI[int(daughterID1)][0,8:10]=freeID[0]
@@ -1911,10 +1941,11 @@ def matchFamilies(trIn):
         
         trOut[(np.diff(trOut[:,2])==0)&(np.diff(trOut[:,3])==0),:]=0
         trOut=trOut[trOut[:,0]>0,:]
+	trOut=findFamilyID(trOut)	
 
-	trOut=findFamilyID(trOut[:,0:10])	
+	trOut[:,10]=trOut[:,13].copy()
 
-	return trOut
+	return trOut[:,:12]
 
 	
 def fixFamilies(trIn):
@@ -1979,7 +2010,6 @@ def addCellAge(trIn):
 			
 			if (np.diff(trI[i][:,2])>1).any():
 				trI[i]=fillGap(trI[i].copy())
-
 	trOut=revertListIntoArray(trI)
         trOut[(np.diff(trOut[:,2])==0)&(np.diff(trOut[:,3])==0),:]==0
 	trOut=trOut[trOut[:,0]>0,:]
@@ -2042,7 +2072,7 @@ def addElongationRate(trIn):
 	
 	return trOut
 
-def smoothLength(trIn):
+def smoothDim(trIn,dim):
 	'''
 	Goes through each track and applies a removePeaks to the length
 	'''
@@ -2052,14 +2082,34 @@ def smoothLength(trIn):
 	for id in range(len(trI)):
 		dT=trI[id]
 		if len(dT):
-			LL=removePeaks(dT[:,4],'Down')
-			LL=removePlateau(LL)
-			trI[id][:,4]=LL.copy()
+			LL=removePeaks(dT[:,dim],'Down')
+			if (dim==4) or (dim==5):
+				LL=removePlateau(LL)
+			trI[id][:,dim]=LL.copy()
 
 	trOut=revertListIntoArray(trI)
 	return trOut
 	
+def extractLineage(trIn,id):
+	'''
+	lin=extrackLineage(trIn,id) return the lineage starting from id .
+		The data is ordered chronologically as lin[n]=[motherID, time]
+	'''
 
+	trI=splitIntoList(trIn,3)
+	t=trI[id][-1,2]
+	lin=np.array((id,t))
+
+	while t>0:
+		motherID=trI[id][0,8]
+		t=trI[int(motherID)][0,2]
+		lin=np.vstack((lin,np.array((motherID,t))))
+		id=int(motherID)
+
+	lin=np.flipud(lin)
+	return lin
+	
+	
 def pathologicalTracks(trIn):
 	'''
 	Extracks the tracks that either are born without mothers or die without children
@@ -2111,8 +2161,8 @@ def optimizeParameters(fPath,num):
 	"""
 	import random as rnd
 	lnoise0=1
-	lobject0=8
-	thres0=2
+	lobject0=6
+	boxSize0=15
 	tifList=[]
 	fileList=sort_nicely(os.listdir(fPath))
 	for file in fileList:
@@ -2125,14 +2175,13 @@ def optimizeParameters(fPath,num):
 	while not stop:
 		lnoise0=(raw_input('What is the typical noise size you want to remove (leave empty for current='+str(lnoise0)+')?') or lnoise0)	
 		lobject0=(raw_input('What is the typical object size (leave empty for current='+str(lobject0)+')?') or lobject0)
-		thres0=(raw_input('What is the intensity threshold (leave empty for current='+str(thres0)+')?') or thres0)
+		boxSize0=(raw_input('What is the size of the threshold box (leave empty for current='+str(boxSize0)+')?') or boxSize0)
 		print 'Please examine the resulting image, close it when done'	
 		img=cv.imread(fPath+tifList[num],-1)
 		img=cv.transpose(img)
-		bwImg=processImage(img,scaleFact=1,sBlur=0,sAmount=0,
+		bwImg=processImage(img,scaleFact=1,sBlur=0.5,sAmount=0,
 				   lnoise=lnoise0,lobject=lobject0,
-				   thres=np.double(thres0),solidThres=0.65,
-				   lengthThres=1.5)
+				   boxSize=np.double(boxSize0),solidThres=0.65)
 		fig = plt.figure()
 		ax1 = fig.add_subplot(3,1,1)
 		ax1.imshow(img)	
@@ -2144,7 +2193,7 @@ def optimizeParameters(fPath,num):
 	
 		ax3 = fig.add_subplot(3,1,3)	
 		ax3.imshow(bwImg)
-		ax3.set_title('Thresholded image. Threshold value='+str(thres0)+'. ')	
+		ax3.set_title('Thresholded image. BoxSize value='+str(boxSize0)+'. ')	
 		
 		plt.show()
 		satisfiedYN=raw_input('Are you satisfied with the  parameters? (yes or no) ')
@@ -2152,7 +2201,7 @@ def optimizeParameters(fPath,num):
 			stop=True
 			
 
-	return lnoise0,lobject0,thres0	
+	return lnoise0,lobject0,boxSize0	
 
 def splitRegions(fPath,numberOfRegions):
 	"""
@@ -2162,7 +2211,7 @@ def splitRegions(fPath,numberOfRegions):
 	import scipy.cluster.vq as vq
 	lnoise0=1
 	lobject0=8
-	thres0=2
+	boxSize0=15
 	tifList=[]
 	fileList=sort_nicely(os.listdir(fPath))
 	for file in fileList:
@@ -2174,8 +2223,7 @@ def splitRegions(fPath,numberOfRegions):
 	img=cv.transpose(img)
 	bwImg=processImage(img,scaleFact=1,sBlur=0,sAmount=0,
 			   lnoise=lnoise0,lobject=lobject0,
-			   thres=np.double(thres0),solidThres=0.65,
-			   lengthThres=1.5)
+			   boxSize=np.double(boxSize0),solidThres=0.65)
 	posList=regionprops(bwImg)[:,0:2]
 	wPosList=vq.whiten(posList)
 
@@ -2245,7 +2293,7 @@ if __name__ == "__main__":
 			INTERACTIVE=False
 	
 	
-	lnoise,lobject,thres=1,8,2
+	lnoise,lobject,boxSize=1,8,15
 
 	if INTERACTIVE:
 		FILEPATH=(raw_input('Please enter the folder you want to analyze (leave empty to use current location) ') or './')
@@ -2253,7 +2301,7 @@ if __name__ == "__main__":
 		if PROCESSFILES=='yes':
 			OPTIMIZEPROCESSING=raw_input('Do you want to optimize the image processing parameters? (yes or no) ')
 			if OPTIMIZEPROCESSING=='yes':
-				lnoise,lobject,thres=optimizeParameters(FILEPATH,0)
+				lnoise,lobject,boxSize=optimizeParameters(FILEPATH,0)
 		MULTIPLEREGIONS=raw_input('Are there multiple disjointed regions in each image? (yes or no) ')
 		if MULTIPLEREGIONS=='yes':
 			NUMBEROFREGIONS=int(raw_input('How many regions per field of view? (Enter a number) '))
@@ -2269,21 +2317,22 @@ if __name__ == "__main__":
 		SAVEPATH=(raw_input('Please enter the location where the analyzed files will be saved (leave empty to use current location) ') or './')
 	else:
 		FILEPATH='./'
-		PROCESSFILES='no'
+		PROCESSFILES='yes'
 		LINKTRACKS='yes'
 		PROCESSTRACKS='yes'
 		SAVEPATH='./'
 		MULTIPLEREGIONS='no'
 		NUMBEROFREGIONS=1		
+		LIMITFILES=0
 
-	np.savez(SAVEPATH+'processFiles.npz',lnoise=lnoise,lobject=lobject,thres=thres)
+	np.savez(SAVEPATH+'processFiles.npz',lnoise=lnoise,lobject=lobject,boxSize=boxSize)
 
 	if MULTIPLEREGIONS=='yes':
 		lims=splitRegions(FILEPATH,NUMBEROFREGIONS)
 	else:
-		lims=np.array([[0,-1]])
+		lims=np.array([[0,-2]])
 	if PROCESSFILES=='yes':
-		masterL,LL,AA=trackCells(FILEPATH,np.double(lnoise),np.double(lobject),np.double(thres),lims,int(LIMITFILES))
+		masterL,LL,AA=trackCells(FILEPATH,np.double(lnoise),np.double(lobject),np.double(boxSize),lims,int(LIMITFILES))
 		for id in range(NUMBEROFREGIONS):
 			saveListOfArrays(SAVEPATH+'masterL_'+str(id)+'.npz',masterL[id])
 			saveListOfArrays(SAVEPATH+'LL_'+str(id)+'.npz',LL[id])
@@ -2292,13 +2341,13 @@ if __name__ == "__main__":
 		for id in range(NUMBEROFREGIONS):
 			#masterL=loadListOfArrays(SAVEPATH+'masterL_'+str(id)+'.npz')
 			#LL=loadListOfArrays(SAVEPATH+'LL_'+str(id)+'.npz')
-			masterL=loadListOfArrays(SAVEPATH+'masterL.npz')
-			LL=loadListOfArrays(SAVEPATH+'LL.npz')
+			masterL=loadListOfArrays(SAVEPATH+'masterL_0.npz')
+			LL=loadListOfArrays(SAVEPATH+'LL_0.npz')
 			tr=linkTracks(masterL,LL)
 			if PROCESSTRACKS=='yes':
 				tr=processTracks(tr)
 			with open(SAVEPATH+'/trData_'+str(id)+'.dat', 'wb') as f:	
-				f.write(b'# xPos yPos time cellID cellLength cellWidth cellAngle avgIntensity divisionEvents familyID cellAge elongationRate\n')
+				f.write(b'# xPos yPos time cellID cellLength cellWidth cellAngle avgIntensity divisionEventsLeft divisionEventsRight familyID cellAge elongationRate\n')
 				np.savetxt(f,tr)
 			print 'The analysis of region '+str(id)+' is complete. Data saved as '+SAVEPATH+'trData_'+str(id)+'.dat'	
 		
