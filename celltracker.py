@@ -150,6 +150,7 @@ def resetIntersect(x0,y0,x1,y1):
 				    array([100000000.,10000.]))
 	return x0,y0,x1,y1
 
+
 def bpass(img,lnoise,lobject):
 	'''
 	imgOut = bpass(img,lnoise,lobject) return an 
@@ -159,15 +160,15 @@ def bpass(img,lnoise,lobject):
 	The script has been translated from the bpass.m script developed 
 	by John C. Crocker and David G. Grier.'''
 	
+	from scipy import signal	
+
 	lnoise=np.double(lnoise)
 	lobject=np.double(lobject)
 	image_array=np.double(img)  #Convert the input image to double
 	
 	#Create the gaussian and boxcar kernels
-	gauss_kernel_range=np.arange((-5*lnoise),(5*lnoise))/(2*lnoise)
-	gauss_kernel=anormalize(np.exp(-np.power(gauss_kernel_range,2)))
-	boxcar_kernel=anormalize(np.ones((1,len(np.arange(-lobject,lobject))),
-		                         dtype=float))
+	gauss_kernel=anormalize(signal.gaussian(np.floor(10*lnoise)+1,lnoise))
+	boxcar_kernel=anormalize(signal.boxcar(2*lobject))
 	#Apply the filter to the input image
 	gconv0=cv.filter2D(np.transpose(image_array),-1,gauss_kernel)
 	gconv=cv.filter2D(np.transpose(gconv0),-1,gauss_kernel)
@@ -179,6 +180,17 @@ def bpass(img,lnoise,lobject):
 	filtered[filtered<0]=0
 	#Output the final image
 	imgOut=filtered.copy()
+	return imgOut
+
+def mat2gray(img,scale):
+	'''
+	imgOut=mat2gray(img,scale) return a rescaled matrix from 1 to scale
+	'''
+
+	imgM=img-img.min()+1
+
+	imgOut=imgM*scale/imgM.max()
+
 	return imgOut
 
 def unsharp(img,sigma=5,amount=10):
@@ -401,8 +413,7 @@ def avgCellInt(rawImg,bwImg):
 def segmentCells(bwImg,iterN=1):
 	'''
 	imgOut = segmentCells(bwImg,propIndex,pThreshold,iterN=2) applies 
-	a watershed transformation to the regions in bwImg whose property 
-	propIndex are smaller than pThreshold.
+	a watershed transformation to bwImg.
 	'''
 	labelImg=bwlabel(bwImg).copy()
 	
@@ -641,7 +652,7 @@ def matchIndices(dataList,matchType='Area'):
 						indx2=assign1[matchData[i,1]]-1
 						A[indx1][indx2]=1./matchData[i,2]
 			#Find matching elements with munkres algorithm
-			m=mk.Munkres()
+			#m=mk.Munkres()
 			#inds=m.compute(-A)
 			inds,inds0=hun.lap(-A)
 			inds2=np.zeros((len(inds),2))
@@ -735,8 +746,8 @@ def putLabelOnImg(fPath,tr,dataRange,dim,num):
 #		plt.clim((0,30))
 		plt.title(str(t))
 		plt.hold(False)
-		plt.xlim((0,950))
-		plt.ylim((25,1220))
+		plt.xlim((0,1250))
+		plt.ylim((25,220))
 		
 #		cv.imwrite(fPath+'Fig'+str(t)+'.jpg',np.uint8(bwI))
 #		plt.savefig(fPath+"Fig"+str(t)+".png",dpi=(120))
@@ -766,7 +777,8 @@ def processImage(imgIn,scaleFact=1,sBlur=0.5,sAmount=0,lnoise=1,
 	widthThres = width of the cells. Cells above that width will be 
 		segmented as they may represent joined cells
 	'''	
-	img=cv.resize(imgIn,(np.size(imgIn,1)*scaleFact,
+	img=mat2gray(imgIn,255)
+	img=cv.resize(img,(np.size(imgIn,1)*scaleFact,
 		      np.size(imgIn,0)*scaleFact))
 	imgU=(unsharp(img,sBlur,sAmount))
 	imgB=bpass(imgU,lnoise,lobject).copy()
@@ -776,19 +788,22 @@ def processImage(imgIn,scaleFact=1,sBlur=0.5,sAmount=0,lnoise=1,
 	bwImg=dilateConnected(bwImg,1)
 	bwImg=segmentCells(bwImg>0)
 	bwImg=fragmentCells(bwImg>0,regionprops(bwImg)[:,6],solidThres)
-	
 	bwImg=removeSmallBlobs(bwImg,100)
 	bwImg=dilateConnected(bwImg,1)
 	return bwImg
 	
 
-def preProcessCyano(brightImg,chlorophyllImg):
+def preProcessCyano(brightImg,chlorophyllImg=0,mask=False):
 	'''
 	Pre-process the Chlorophyll and brightfield images so that they can be
 	segmented directly.
 	''' 
 	solidThres=0.75
-	cellMask = cv.dilate(np.uint8(bpass(chlorophyllImg,1,10)>50),None,iterations=15)
+	if mask:
+		bImg=bpass(chlorophyllImg,1,10)
+		cellMask = cv.dilate(np.uint8(bImg>50),None,iterations=15)
+	else:
+		cellMask= brightImg*0+1
 	processedBrightfield = bpass(brightImg,1,10)>25
 
 	dilatedIm=cv.dilate(removeSmallBlobs(processedBrightfield*cellMask,75),None,iterations=2)
@@ -811,7 +826,56 @@ def preProcessCyano(brightImg,chlorophyllImg):
 #			   solidThres,2)	
 	return np.uint8(imgOut)
 
-def trackCells(fPath,lnoise=1,lobject=8,boxSize=15,lims=np.array([[0,-1]]),maxFiles=0):
+
+def stabilizeImages(fPath,endsWith='tif',SAVE=True,preProcess=False):
+	'''
+	translationList=stabilizeImages(fPath,Save=True) goes through the files in folder fPath
+	and aligns images by computing the optical flow between successive images
+	'''
+	tifList=[]
+	translationList=np.zeros((2,),dtype=int)
+	fileList=sort_nicely(os.listdir(fPath))
+	for file in fileList:
+		if file.endswith(endsWith):
+			tifList.append(file)
+
+	kmax=len(tifList)
+
+
+	k=0
+	for fname in np.transpose(tifList):
+		k=k+1	
+
+		img=cv.imread(fPath+fname,-1)
+
+		if k>1:	
+
+			if preProcess:
+				A=(cv.matchTemplate(np.uint8(bpass(img0/32.,1,10)),np.uint8(bpass(img[borderSize:-borderSize,borderSize:-borderSize]/32.,1,10)),cv.cv.CV_TM_CCORR_NORMED))
+			else:
+				A=(cv.matchTemplate(np.uint8(img0/32.),np.uint8(img[borderSize:-borderSize,borderSize:-borderSize]/32.),cv.cv.CV_TM_CCORR_NORMED))			
+
+			maxLoc=(A==A.max()).nonzero()
+			
+			deltaX=np.arange(-borderSize,borderSize+1)[maxLoc[0]][0]
+			deltaY=np.arange(-borderSize,borderSize+1)[maxLoc[1]][0]
+
+
+
+			if abs(deltaX)!=0:
+				img=np.roll(img,int(deltaX),axis=0)
+			if abs(deltaY)!=0:
+				img=np.roll(img,int(deltaY),axis=1)
+			if SAVE:
+				cv.imwrite(fPath+fname0[:-10]+'-aligned.tif',img)
+			translationList=np.vstack((translationList,np.array((int(deltaX),int(deltaY)))))
+		else:
+			borderSize=np.round(min(img.shape)/20.)-1
+		img0=img.copy()
+		fname0=fname.copy()
+	return translationList
+		
+def trackCells(fPath,lnoise=1,lobject=8,boxSize=15,lims=np.array([[0,-1]]),maxFiles=0,tList=0):
 	'''
 	This prepares the data necessary to track the cells.
 	masterL,LL,AA=trackCells(fPath,lnoise=1,lobject=8,boxSize=15,lims=0)
@@ -860,7 +924,10 @@ def trackCells(fPath,lnoise=1,lobject=8,boxSize=15,lims=np.array([[0,-1]]),maxFi
 		if len(img0)==0:
 			img=img.copy()
 		else:
-			img=img0.copy()	
+			img=img0.copy()
+		if tList:
+			img=np.roll(img,int(tList[k][0]),axis=0)	
+			img=np.roll(img,int(tList[k][1]),axis=1)	
 		img=cv.transpose(img)
 		for id in range(len(lims)):
 			imgCropped[id]=img[lims[id,0]:lims[id,1],:]
@@ -956,8 +1023,9 @@ def processTracks(trIn):
 	print "Smoothing Length and XY-dimensions"
 	#tr=smoothDim(trIn,4)
 	tr=smoothDim(trIn,5)
-	tr=smoothDim(tr,0)
-	tr=smoothDim(tr,1)
+#	tr=smoothDim(tr,0)
+#	tr=smoothDim(tr,1)
+#	tr=smoothDim(tr,7)
 
 #	tr=removeShortTracks(tr,1)	
 	print "Bridging track gaps"	
@@ -983,6 +1051,7 @@ def processTracks(trIn):
 	
 	
 	print "Compute elongation rate"	
+	tr=smoothDim(tr,4)
 	tr=addElongationRate(tr)
 	return tr
 	
@@ -1141,6 +1210,23 @@ def removeShortTracks(tr,shortTrack=3):
 	trS=revertListIntoArray(trT)
 	return trS
 
+def extendShortTracks(tr,shortTrack=2):
+	'''
+	tr=removeShortTracks(tr,shortTrack=3) removes 
+	tracks shorter than shortTrack
+	'''
+	trLength=np.histogram(tr[:,3],np.unique(tr[:,3]))
+        idShort=trLength[1][trLength[0]<=shortTrack]
+        k=0
+	trT=splitIntoList(tr,3)
+        #Reassign cell ID
+        for id in idShort:
+                trT[int(id)]=np.vstack((trT[int(id)],trT[int(id)][0]))
+	
+	trS=revertListIntoArray(trT)
+	return trS
+
+
 def matchTracksOverlap(inList1,inList2,dist,timeRange):
 	matchList=np.zeros((1,3))
 
@@ -1149,11 +1235,9 @@ def matchTracksOverlap(inList1,inList2,dist,timeRange):
 		boxPts=getBoundingBox(pts,dist)
 		nearPts=inList2[(inList2[:,2]<=(pts[2]+timeRange[1])) &
 				(inList2[:,2]>=(pts[2]-timeRange[0])),:]
-
-		dividingImg=traceOutlines([pts],dist,(250,1200))
+		dividingImg=traceOutlines([pts],dist,(1250,1200))
 		
-		matchingImg=traceOutlines(nearPts,1,(250,1200))	
-
+		matchingImg=traceOutlines(nearPts,1,(1250,1200))	
 		areaList=labelOverlap(dividingImg,matchingImg)
 		if np.sum(areaList)==0:
 			areaList=areaList+0
@@ -1164,8 +1248,8 @@ def matchTracksOverlap(inList1,inList2,dist,timeRange):
 			for i in range(len(areaList)):
 				areaList[i,0]=pts[3]
 				areaList[i,1]=nearPts[areaList[i,1]-1,3]
-
 		matchList=np.vstack((matchList,areaList))
+	matchList=matchList[matchList[:,0]>0,:]
 
 	return matchList
 
@@ -1359,77 +1443,6 @@ def findDivs(L):
 	divTimes=divTimes[divTimes>3]
 	return divTimes
 
-
-def peakdet(v, delta, x = None):
-    """
-    Converted from MATLAB script at http://billauer.co.il/peakdet.html
-    
-    Returns two arrays
-    
-    function [maxtab, mintab]=peakdet(v, delta, x)
-    %PEAKDET Detect peaks in a vector
-    %        [MAXTAB, MINTAB] = PEAKDET(V, DELTA) finds the local
-    %        maxima and minima ("peaks") in the vector V.
-    %        MAXTAB and MINTAB consists of two columns. Column 1
-    %        contains indices in V, and column 2 the found values.
-    %      
-    %        With [MAXTAB, MINTAB] = PEAKDET(V, DELTA, X) the indices
-    %        in MAXTAB and MINTAB are replaced with the corresponding
-    %        X-values.
-    %
-    %        A point is considered a maximum peak if it has the maximal
-    %        value, and was preceded (to the left) by a value lower by
-    %        DELTA.
-    
-    % Eli Billauer, 3.4.05 (Explicitly not copyrighted).
-    % This function is released to the public domain; Any use is allowed.
-    
-    """
-    maxtab = []
-    mintab = []
-       
-    if x is None:
-        x = np.arange(len(v))
-    
-    v = np.asarray(v)
-    
-    if len(v) != len(x):
-        sys.exit('Input vectors v and x must have same length')
-    
-    if not isscalar(delta):
-        sys.exit('Input argument delta must be a scalar')
-    
-    if delta <= 0:
-        sys.exit('Input argument delta must be positive')
-    
-    mn, mx = Inf, -Inf
-    mnpos, mxpos = NaN, NaN
-    
-    lookformax = True
-    
-    for i in arange(len(v)):
-        this = v[i]
-        if this > mx:
-            mx = this
-            mxpos = x[i]
-        if this < mn:
-            mn = this
-            mnpos = x[i]
-        
-        if lookformax:
-            if this < mx-delta:
-                maxtab.append((mxpos, mx))
-                mn = this
-                mnpos = x[i]
-                lookformax = False
-        else:
-            if this > mn+delta:
-                mintab.append((mnpos, mn))
-                mx = this
-                mxpos = x[i]
-                lookformax = True
-
-    return array(maxtab), array(mintab)
 
 def removePeaks(Lin,mode='Down'):
 	'''
@@ -2090,25 +2103,102 @@ def smoothDim(trIn,dim):
 	trOut=revertListIntoArray(trI)
 	return trOut
 	
-def extractLineage(trIn,id):
+def extractLineage(trI,id):
 	'''
 	lin=extrackLineage(trIn,id) return the lineage starting from id .
 		The data is ordered chronologically as lin[n]=[motherID, time]
 	'''
 
-	trI=splitIntoList(trIn,3)
-	t=trI[id][-1,2]
+	t=trI[id][0,2]
 	lin=np.array((id,t))
-
+	flip=True
 	while t>0:
 		motherID=trI[id][0,8]
-		t=trI[int(motherID)][0,2]
-		lin=np.vstack((lin,np.array((motherID,t))))
-		id=int(motherID)
-
-	lin=np.flipud(lin)
+		if motherID==trI[id][0,3]:
+			t=0
+		elif motherID>0:
+			t=trI[int(motherID)][0,2]
+			lin=np.vstack((lin,np.array((motherID,t))))
+			id=int(motherID)
+		else:
+			t=0
+	if lin.ndim>1:
+		lin=np.flipud(lin)
 	return lin
 	
+def findPoleAge(trIn,id,t):
+	'''
+	[ageL,ageR]=findPoleAge(trIn,id,t) return the age of the pole of a cell
+	ageL is the age of the leftmost pole and ageR is the age of the rightmost pole
+	'''
+
+	if t>trIn[id][-1,2]:
+		print "make sure t is within id's lifetime"
+		return np.zeros((2,))
+	elif t<trIn[id][0,2]:
+		print "make sure t is within id's lifetime"
+		return np.zeros((2,))
+
+	lin=extractLineage(trIn,id)
+	if not len(lin):
+		return np.array((0,0))
+	if lin.shape[0]==2:
+		return np.array((0,0))
+	elif lin[0,1]==0:
+		lin=lin[1:,:]
+
+	ageL=0
+	ageR=0
+
+	dTD=trIn[int(id)]
+
+	for k in range(1,len(lin[:,0])):
+			
+		dTM=trIn[int(lin[k-1,0])]
+		dTD=trIn[int(lin[k,0])]
+		
+		bbM=getBoundingBox(dTM[-1,:])	
+		bbD=getBoundingBox(dTD[0,:])	
+
+		hypotArray=np.hypot((bbD-bbM)[:,0],(bbD-bbM)[:,1])
+		if hypotArray[0]<hypotArray[2]:
+			ageL+=lin[k,1]-lin[k-1,1]
+			ageR=0
+		elif hypotArray[0]>hypotArray[2]:
+			ageL=0
+			ageR+=lin[k,1]-lin[k-1,1]
+	ageL+=t-dTD[0,2]
+	ageR+=t-dTD[0,2]
+	return np.array((ageL,ageR))
+		
+
+def addPoleAge(trIn):
+	'''
+	trOut=addPoleAge(trIn) adds two columns to trIn, each 
+	one containing the left or the right pole age.
+	'''
+
+	trI=splitIntoList(trIn,3)
+
+	for k in range(len(trI)):
+		if len(trI[k]):
+			print int(trI[k][0,3]) 
+			poleAges=findPoleAge(trI,int(trI[k][0,3]),trI[k][0,2])
+			
+			trI[k]=np.hstack((trI[k],np.zeros((len(trI[k]),2))))
+
+			age1=trI[k][:,11]+poleAges[0]
+			age2=trI[k][:,11]+poleAges[1]		
+			trI[k][:,-2]=age1
+			trI[k][:,-1]=age2
+
+			if trI[k][0,-1]==0:
+				trI[k][:,-2]=age2
+				trI[k][:,-1]=age1
+			
+	trOut=revertListIntoArray(trI)
+			
+	return trOut
 	
 def pathologicalTracks(trIn):
 	'''
@@ -2160,9 +2250,9 @@ def optimizeParameters(fPath,num):
 	Tests the processing parameters on a test file 
 	"""
 	import random as rnd
-	lnoise0=1
-	lobject0=6
-	boxSize0=15
+	lnoise0=2
+	lobject0=8
+	boxSize0=25
 	tifList=[]
 	fileList=sort_nicely(os.listdir(fPath))
 	for file in fileList:
@@ -2176,7 +2266,7 @@ def optimizeParameters(fPath,num):
 		lnoise0=(raw_input('What is the typical noise size you want to remove (leave empty for current='+str(lnoise0)+')?') or lnoise0)	
 		lobject0=(raw_input('What is the typical object size (leave empty for current='+str(lobject0)+')?') or lobject0)
 		boxSize0=(raw_input('What is the size of the threshold box (leave empty for current='+str(boxSize0)+')?') or boxSize0)
-		print 'Please examine the resulting image, close it when done'	
+		print 'Please examine the processed image, close it when done'	
 		img=cv.imread(fPath+tifList[num],-1)
 		img=cv.transpose(img)
 		bwImg=processImage(img,scaleFact=1,sBlur=0.5,sAmount=0,
@@ -2293,10 +2383,11 @@ if __name__ == "__main__":
 			INTERACTIVE=False
 	
 	
-	lnoise,lobject,boxSize=1,8,15
+	lnoise,lobject,boxSize=2,8,25
 
 	if INTERACTIVE:
 		FILEPATH=(raw_input('Please enter the folder you want to analyze (leave empty to use current location) ') or './')
+		STABILIZEIMAGES=(raw_input('Do you want to stabilize the images? (yes or no) '))
 		PROCESSFILES=raw_input('Do you want to process the image files? (yes or no) ')	
 		if PROCESSFILES=='yes':
 			OPTIMIZEPROCESSING=raw_input('Do you want to optimize the image processing parameters? (yes or no) ')
@@ -2317,6 +2408,7 @@ if __name__ == "__main__":
 		SAVEPATH=(raw_input('Please enter the location where the analyzed files will be saved (leave empty to use current location) ') or './')
 	else:
 		FILEPATH='./'
+		STABILIZEIMAGES='no'
 		PROCESSFILES='yes'
 		LINKTRACKS='yes'
 		PROCESSTRACKS='yes'
@@ -2331,8 +2423,12 @@ if __name__ == "__main__":
 		lims=splitRegions(FILEPATH,NUMBEROFREGIONS)
 	else:
 		lims=np.array([[0,-2]])
+	if STABILIZEIMAGES=='yes':
+		translationList=stabilizeImages(FILEPATH,ew='tif',SAVE=False)
+	else:
+		translationList=0
 	if PROCESSFILES=='yes':
-		masterL,LL,AA=trackCells(FILEPATH,np.double(lnoise),np.double(lobject),np.double(boxSize),lims,int(LIMITFILES))
+		masterL,LL,AA=trackCells(FILEPATH,np.double(lnoise),np.double(lobject),np.double(boxSize),lims,int(LIMITFILES),translationList)
 		for id in range(NUMBEROFREGIONS):
 			saveListOfArrays(SAVEPATH+'masterL_'+str(id)+'.npz',masterL[id])
 			saveListOfArrays(SAVEPATH+'LL_'+str(id)+'.npz',LL[id])
