@@ -47,12 +47,26 @@ def unique_rows(a):
 	unique_a = np.unique(a.view([('', a.dtype)]*a.shape[1]))
         return unique_a.view(a.dtype).reshape((unique_a.shape[0], a.shape[1]))
 
-def smooth(x,windowLength=3):
-	""" A simple moving average smoothing function """
+def smooth(x,windowLength=3,type='boxcar'):
+	""" 
+	xs=smooth(x,windowLength,type='boxcar') is a simple moving average smoothing function 
+	Type can be: 
+		-'boxcar'
+		-'gaussian'
+		-'triang'
+	"""
+	from scipy import signal
 	x=np.double(x)
 	s=np.r_[2*x[0]-x[windowLength:1:-1],x,2*x[-1]-x[-1:-windowLength:-1]]
-	w=np.ones(windowLength,'d')
+
+	if type=='boxcar':
+		w=np.ones(windowLength,'d')
+	elif type=='gaussian':
+		w=signal.gaussian(len(x),windowLength)
+	elif type=='triang':
+		w=signal.triang(2*windowLength)
 	y=np.convolve(w/w.sum(),s,mode='valid')
+	#y=np.convolve(w/w.sum(),x,mode='same')
 	return y[((windowLength-1)/2):-((windowLength-1)/2)]
 
 def smoothCS(cs,windowLength):
@@ -316,8 +330,7 @@ def traceOutlines(trT,dist,size):
 	numC=int(len(csl))
 	for i in range(numC):
 		if len(csl[i])>0:
-			k=k+1	
-			cv.drawContours(bw,csl,i,k,thickness=-1)
+			cv.drawContours(bw,csl,i,int(trT[i][3]),thickness=-1)
 		else:
 			cv.drawContours(bw,csl,i,0,thichness=-1)
 	return bw
@@ -603,9 +616,12 @@ def matchIndices(dataList,matchType='Area'):
 	*if matchType='Distance', it can be used to match the cell 
 	positions between successive frames (favorises smallest distance value)
 	'''
+	startProgress('Matching track using the Hungarian algorithm: ')
 	linkList=[0,0,0];
 	#Loop over each indices to find its related matches.
+	cMax=np.double(dataList[:,0].max())
 	for cellID in np.transpose(np.unique(dataList[:,0])):
+		progress(np.double(cellID)/cMax)
 		stop=0
 		#check is dataList is empty
 		if np.size(dataList,0)>0:
@@ -684,6 +700,7 @@ def matchIndices(dataList,matchType='Area'):
 				if np.size(dataList[:,1]!=id,0)>0:
 					dataList=dataList[dataList[:,1]!=id,:]
 	linkList=linkList[linkList[:,0]>0,:]
+	endProgress()
 	return linkList
 
 def putLabelOnImg(fPath,tr,dataRange,dim,num):
@@ -989,8 +1006,10 @@ def linkTracks(masterL,LL):
 	tr[:,2]=0
 	maxID=np.max(ids)
 	tr0=np.zeros((len(LL[1]),8))
-	print "Linking cell overlaps"
+	startProgress('Linking cell overlaps:')
+	
 	for t in range(totalTime-1):
+		progress(t/np.double(totalTime))
 		tr0=np.zeros((len(LL[t+1]),8))
 		masterL[t+1]=np.hstack([masterL[t+1],
 			                np.zeros((len(masterL[t+1]),1))])
@@ -1006,6 +1025,7 @@ def linkTracks(masterL,LL):
 		tr=np.vstack([tr,tr0])
 	tr=tr[tr[:,2].argsort(-1,'mergesort'),]
 	tr=tr[tr[:,3].argsort(-1,'mergesort'),]
+	endProgress()
 
 	return tr
 
@@ -1020,43 +1040,41 @@ def processTracks(trIn):
 	# trackIDs so that the mother is on the left).
 	
 
-	print "Smoothing Length and XY-dimensions"
-	#tr=smoothDim(trIn,4)
+	# "Smoothing Length and XY-dimensions"
 	tr=smoothDim(trIn,5)
-#	tr=smoothDim(tr,0)
-#	tr=smoothDim(tr,1)
-#	tr=smoothDim(tr,7)
+	
+	# 'Fixing sudden cell size changes'
+	tr=splitCells(tr)
 
-#	tr=removeShortTracks(tr,1)	
-	print "Bridging track gaps"	
+	
+	# "Bridging track gaps"	
 	tr=joinTracks(tr,1.5,[2,4])
 	
-	print "Splitting Tracks"
+	# "Splitting Tracks"
 	tr=splitTracks(tr)
-	print "Finding division events, Merging tracks"
+	tr=addCellAge(np.hstack((tr,np.zeros((len(tr),1)))))[:,:-2]
+	
+	# "Finding division events, Merging tracks"
 	tr=mergeTracks(tr)	
 
-#	print "rename Tracks"
-	#Remove orphaned cells and cells that do not divide
-#	tr=renameTracks(tr)	
 
-	print "find family IDs"
+	# "find family IDs"
 	tr=findFamilyID(tr)
-#	tr=matchFamilies(tr)	
+	
+	# "fix family IDs"
+	tr=matchFamilies(tr)	
 
-	print "fix family IDs"
-	#tr=fixFamilies(tr)	
-	print "Adding cell Age"
+	# "Adding cell Age"
 	tr=addCellAge(tr)
 	
-	
-	print "Compute elongation rate"	
-	tr=smoothDim(tr,4)
+	# "Adding Pole Age"
+	tr=addPoleAge(tr)	
+
+	# "Compute elongation rate"	
+	tr=smoothDim(tr,5)
 	tr=addElongationRate(tr)
 	return tr
 	
-	print "match family IDs"
-	tr=matchFamilies(tr)	
 
 
 
@@ -1131,7 +1149,6 @@ def joinTracks(trIn,dist,dataRange):
 
 	trOut=mergeIndividualTracks(trIn.copy(),matchData.copy())
 
-	
 	return trOut
 
 def reassignTrackID(tr,matchList):
@@ -1222,6 +1239,7 @@ def extendShortTracks(tr,shortTrack=2):
         #Reassign cell ID
         for id in idShort:
                 trT[int(id)]=np.vstack((trT[int(id)],trT[int(id)][0]))
+                trT[int(id)][-1,2]=trT[int(id)][-2,2]+1
 	
 	trS=revertListIntoArray(trT)
 	return trS
@@ -1229,28 +1247,48 @@ def extendShortTracks(tr,shortTrack=2):
 
 def matchTracksOverlap(inList1,inList2,dist,timeRange):
 	matchList=np.zeros((1,3))
-
-
+	startProgress('Matching tracks:')
+	k=0
 	for pts in inList1:
-		boxPts=getBoundingBox(pts,dist)
-		nearPts=inList2[(inList2[:,2]<=(pts[2]+timeRange[1])) &
-				(inList2[:,2]>=(pts[2]-timeRange[0])),:]
-		dividingImg=traceOutlines([pts],dist,(1250,1200))
-		
-		matchingImg=traceOutlines(nearPts,1,(1250,1200))	
-		areaList=labelOverlap(dividingImg,matchingImg)
-		if np.sum(areaList)==0:
-			areaList=areaList+0
-		elif areaList.shape[0]==1:
-			areaList[0][0]=pts[3]
-			areaList[0][1]=nearPts[areaList[0][1]-1,3]		
-		else:
-			for i in range(len(areaList)):
-				areaList[i,0]=pts[3]
-				areaList[i,1]=nearPts[areaList[i,1]-1,3]
-		matchList=np.vstack((matchList,areaList))
-	matchList=matchList[matchList[:,0]>0,:]
+		k+=1
+		progress(np.double(k)/np.double(len(inList1)))
+		boxPts=getBoundingBox(pts,dist*3)	
+		boxPath=pa.Path(boxPts.copy())
 
+		#Find starting points that fall inside the bounding box
+		nearPts=inList2[(inList2[:,2]<=(pts[2]+timeRange[1])) & 
+				(inList2[:,2]>=(pts[2]-timeRange[0])),:]
+
+		centerPt=nearPts[:,0:2]
+		
+		inIndx=boxPath.contains_points(centerPt)	
+		if sum(inIndx)>0:
+			inPts=nearPts[inIndx,:]
+		else:
+			inPts=[]		
+		if len(inPts):
+			xRange=np.array([inPts[:,0].min()-100.,inPts[:,0].max()+100.])
+			yRange=np.array([inPts[:,1].min()-100.,inPts[:,1].max()+100.])
+		
+			pts[0]=pts[0]-xRange[0]
+			pts[1]=pts[1]-yRange[0]
+
+			inPts[:,0]=inPts[:,0]-xRange[0]
+			inPts[:,1]=inPts[:,1]-yRange[0]
+
+			dividingImg=traceOutlines([pts],dist,(np.floor(yRange[1]-yRange[0])+1,np.floor(xRange[1]-xRange[0])+1))
+			areaList=np.zeros((1,3))
+			for id in range(len(inPts)):
+				matchingImg=traceOutlines([inPts[id]],1,(np.floor(yRange[1]-yRange[0])+1,np.floor(xRange[1]-xRange[0])+1))
+				areaList=np.vstack((areaList,labelOverlap(dividingImg,matchingImg)))
+		else:
+			areaList=np.zeros((1,3))
+		if areaList.sum()==0:
+			areaList=np.zeros((1,3))
+		matchList=np.vstack((matchList,areaList))
+	matchList=matchList[matchList[:,0]!=matchList[:,1],:]
+	matchList=matchList[matchList[:,2]>0,:]
+	endProgress()
 	return matchList
 
 def matchTracks(inList1,inList2,dist,timeRange):
@@ -1379,11 +1417,12 @@ def revertListIntoArray(listIn):
 		if np.mod(id,nID)==0:
 			k=k+1
 
-	arrayOutAll=arrayOut[0].copy()
-	for id in range(1,len(arrayOut)):
+	arrayOutAll=arrayOut[0].copy()*0
+	for id in range(0,len(arrayOut)):
 		if np.size(arrayOut[id])>1:
 			arrayOutAll=np.vstack((arrayOutAll,arrayOut[id]))	
 
+	arrayOutAll=arrayOutAll[arrayOutAll[:,0]>0,:]
 
 	return arrayOutAll
 
@@ -1413,22 +1452,13 @@ def findDivs(L):
 	L is the length of the cell
 	'''	
 	divTimes=np.array([])
-	divJumpSize=17.5
+	divJumpSize=0.33
 	minSize=10
-	std_thres=0.15
 		#Remove the points with a large positive derivative, do this twice
-	Lup=removePeaks(L.copy(),'Up')	
-	Ldown=removePeaks(L.copy(),'Down')
-
-	if np.sum(np.diff(Lup)**2)<np.sum(np.diff(Ldown)**2):	
-		L=Lup.copy()
-	elif np.sum(np.diff(Lup)**2)>np.sum(np.diff(Ldown)**2):
-		L=Ldown.copy()
-#		L=Ldown.copy()
-	L=removePlateau(Ldown.copy())
-
+	L=removePeaks(L.copy(),'Down')	
+#	L=removePlateau(Ldown.copy())
 	#Find the general location of a division event.
-	divLoc=((np.diff((L))<-divJumpSize)&(L[:-1]>minSize)).nonzero()
+	divLoc=((np.diff(np.log(L))<-divJumpSize)&(L[:-1]>minSize)).nonzero()
 
 	#Check if length is higher later
 	divTimes=np.array(divLoc[0])
@@ -1517,7 +1547,7 @@ def removePlateau(Lin):
 	becomes continuous once a constant value is added (substracted) to the plateau. 
 	'''
 
-	divJumpSize=10
+	divJumpSize=12.5
 	LL=Lin.copy()
 
 	#Find the location of the sudden jumps (up or down)
@@ -1572,22 +1602,27 @@ def splitTracks(trIn):
 	x=np.array([0,0])
 	k=1
 	idList=np.unique(trIn[:,3]).astype('int')
+	startProgress('Splitting cell tracks:')
 	for id in idList:
+		progress(np.double(id)/np.double(idList.max()))
 		if np.intersect1d(divData[:,0],np.array(id)):
 			divList=divData[divData[:,0]==id,:]
 			x[0]=trI[id][0,2]
 			for pt in divList:
 				x[1]=pt[1].copy()
-				if (pt[1]!=divList[0][1]):
-					trI[id][(trI[id][:,2]==x[0]),8]=k-1
-					trI[id][(trI[id][:,2]==x[0]),9]=k-1
-				trI[id][(trI[id][:,2]==(x[1]-1)),8]=k+1
-				trI[id][(trI[id][:,2]>=x[0])&(trI[id][:,2]<x[1]),3]=k
-				k=k+1
-				x[0]=x[1].copy()
-			trI[id][(trI[id][:,2]==x[0]),8]=k-1
-			trI[id][(trI[id][:,2]==x[0]),9]=k-1
-			trI[id][trI[id][:,2]>=x[0],3]=k
+				if x[1]<trI[id][-1,2]:
+					if (pt[1]!=divList[0][1]):
+						trI[id][(trI[id][:,2]==x[0]),8]=k-1
+						trI[id][(trI[id][:,2]==x[0]),9]=k-1
+					trI[id][(trI[id][:,2]==(x[1]-1)),8]=k+1
+					trI[id][(trI[id][:,2]>=x[0])&(trI[id][:,2]<x[1]),3]=k
+					k=k+1
+					x[0]=x[1].copy()
+					
+			if sum(trI[id][:,2]>=x[0])>1:
+				trI[id][(trI[id][:,2]==x[0]),8]=k-1
+				trI[id][(trI[id][:,2]==x[0]),9]=k-1
+				trI[id][trI[id][:,2]>=x[0],3]=k
 			if len(trI[id][trI[id][:,2]>=x[0],3])==1:
 				trI[id][trI[id][:,2]>=x[0],3]=0
 #				trI[id]=np.vstack((trI[id],trI[id][-1,:]))
@@ -1597,12 +1632,55 @@ def splitTracks(trIn):
 		else:
 			trI[id][:,3]=k
 			k=k+1	
-
 	trOut=revertListIntoArray(trI)	
 	trOut=trOut[trOut[:,3]>0,:]	
 #	trOut=removeShortCells(trOut,20)	
-	
+	endProgress()	
 	return trOut
+
+def splitCells(trIn):
+	'''
+	trOut=splitCells(trIn) looks at each track segment and if it finds that a cell
+	suddendly increases in length, it will split it into two small cells instead
+	'''
+	
+	freeID=np.setdiff1d(np.arange(3*np.max(trIn[:,3])),np.unique(trIn[:,3]))
+	freeID=freeID[1:].copy()
+	startProgress('Splitting joined cells: ')
+	trI=splitIntoList(trIn,3)
+	for i in range(len(trI)):
+		if len(trI[i]):
+			progress(np.double(i)/np.double(len(trI)))
+			L=trI[i][:,4].copy()
+			jumpID=((L-removePlateau(L))>0).nonzero()[0]
+			if jumpID.any():
+				id0=0
+				for id in jumpID:
+					if (id<(len(L)-2))&(id>2):
+						trI[i]=np.vstack((trI[i],trI[i][id,:]))
+						trI[i][-1,3]=freeID[0]
+						trI[i][-1,0]= trI[i][-1,0]+trI[i][id,4]/4.*np.sin(trI[i][id,6]*np.pi/180.)
+						trI[i][-1:,1]= trI[i][-1:,1]-trI[i][id,4]/4.*np.cos(trI[i][id,6]*np.pi/180.)
+						trI[i][id,0]= trI[i][id,0]-trI[i][id,4]/4.*np.sin(trI[i][id,6]*np.pi/180.)
+						trI[i][id,1]= trI[i][id,1]+trI[i][id,4]/4.*np.cos(trI[i][id,6]*np.pi/180.)
+						trI[i][id,4]=trI[i][id,4]/2.
+						trI[i][-1,4]=trI[i][id,4]
+						if (id-id0)>1:	
+							freeID=freeID[1:]
+						id0=id
+			freeID=freeID[1:]
+			jumpIDDown=((L-removePlateau(L))<0).nonzero()[0]
+			if jumpIDDown.any():
+				for id in jumpIDDown:
+					if (id<(len(L)-2))&(id>2):
+						trI[i][id,4]=trI[i][id,4]*2.
+
+	trOut=revertListIntoArray(trI)
+
+	trOut=extendShortTracks(trOut,2)
+	endProgress()
+	return trOut
+	
 
 def findDaughters(trIn,merge=False):
 	'''
@@ -1712,13 +1790,15 @@ def mergeTracks(trIn):
 		matchData=np.zeros((3,1))
 
 	trT=splitIntoList(trOut,3)
-	ids=np.unique(trOut[:,3])
+	ids,indx=np.unique(trOut[trOut[:,2].argsort(),3],return_index=True)
+	ids=ids[indx.argsort()]
 	ids=np.flipud(ids)
-	
+	startProgress('Merging tracks:')
 	for k in range(len(ids)):
 		i=ids[k]
-		divD=divData[divData[:,0]==i,:]
-		mData=matchData[matchData[:,0]==i,:]
+		progress(np.double(k)/np.double(len(ids)))
+		divD=divData[(divData[:,0]==i)&(divData[:,1]!=i),:]
+		mData=matchData[(matchData[:,0]==i)&(matchData[:,1]!=i),:]
 		if len(divD)>2:
 			divD=divD[divD[:,0]!=divD[:,1],:]
 		
@@ -1785,7 +1865,7 @@ def mergeTracks(trIn):
 	trOut=trOut[trOut[:,0]>0,:]
 
 	trOut[(trOut[:,8]>0)&(trOut[:,9]==0),8:10]=0
-	
+	endProgress()	
 
 	return trOut
 
@@ -1868,8 +1948,10 @@ def findFamilyID(trIn):
 	famID=0
 	k=0
 	stop=False		
-	
+	idMax=len(cellIdList)
+	startProgress('Finding and sorting the families:')
 	while len(cellIdList)>0:		
+		progress(1-np.double(len(cellIdList))/np.double(idMax))
 		famID=famID+1
 		unlabelledCell=cellIdList[0]
 		famList=np.array([unlabelledCell])
@@ -1889,7 +1971,7 @@ def findFamilyID(trIn):
 		
 		stop=False
 	trLong=revertListIntoArray(trI)	
-	
+	endProgress()	
 	return trLong
 		
 def matchFamilies(trIn):
@@ -1910,14 +1992,25 @@ def matchFamilies(trIn):
 	famStart=trIn[0]
 	for tt in trFam:
 		if len(tt[:,0])>10:
+			tt=tt[tt[:,2].argsort(-1,'mergesort'),]
 			famStart=np.vstack((famStart,tt[0]))
 			
-	famStart[:,5]=famStart[:,5]/2
 	initialIDs=np.unique(trIn[trIn[:,2]<25,10])
 	for i in initialIDs:
 		famStart[famStart[:,10]==i,:]=0
 	famStart=famStart[famStart[:,0]>0,:]
-	listOfMatches=matchTracksOverlap(famStart,trIn,3,[4,-1])	
+
+	trI2=splitIntoList(trIn,3)
+
+	for i in range(len(trI2)):
+		if len(trI2[i])>21:
+			trI2[i]=trI2[i][10:-10,:].copy()
+		else:
+			trI2[i]=[]
+
+	trC=revertListIntoArray(trI2)
+
+	listOfMatches=matchTracksOverlap(famStart,trC,3,[5,-1])	
 
 	matchData=matchIndices(listOfMatches,'Area')
 	for md in matchData:
@@ -1956,9 +2049,9 @@ def matchFamilies(trIn):
         trOut=trOut[trOut[:,0]>0,:]
 	trOut=findFamilyID(trOut)	
 
-	trOut[:,10]=trOut[:,13].copy()
+	trOut[:,10]=trOut[:,11].copy()
 
-	return trOut[:,:12]
+	return trOut[:,:11]
 
 	
 def fixFamilies(trIn):
@@ -2077,7 +2170,7 @@ def addElongationRate(trIn):
 		dT=trI[int(id)].copy()
 		if len(dT)>15:
 			dT=dT[5:-5,:]
-			z = np.polyfit(range(len(dT)), np.log(np.abs(dT[:,4])), 1)
+			z = np.polyfit(range(len(dT)), np.log(np.abs(dT[:,5])), 1)
 			dT[:,-1]=z[0]
 			trI[int(id)][:,-1]=z[0]
 	trOut=revertListIntoArray(trI)
@@ -2142,31 +2235,43 @@ def findPoleAge(trIn,id,t):
 	lin=extractLineage(trIn,id)
 	if not len(lin):
 		return np.array((0,0))
-	if lin.shape[0]==2:
-		return np.array((0,0))
-	elif lin[0,1]==0:
-		lin=lin[1:,:]
+	if lin.ndim==1:
+		return np.array((t-trIn[int(id)][0,2],t-trIn[int(id)][0,2]))
 
 	ageL=0
 	ageR=0
 
 	dTD=trIn[int(id)]
-
 	for k in range(1,len(lin[:,0])):
-			
+		sisterIDs=trIn[int(lin[k-1,0])][-1,8:10]
+		
 		dTM=trIn[int(lin[k-1,0])]
 		dTD=trIn[int(lin[k,0])]
+		if sisterIDs[0]!=sisterIDs[1]:
+			dTS=trIn[int(sisterIDs[sisterIDs!=lin[k,0]])]
+		else:
+			dTS=dTD.copy()
 		
 		bbM=getBoundingBox(dTM[-1,:])	
 		bbD=getBoundingBox(dTD[0,:])	
+		bbS=getBoundingBox(dTS[0,:])	
 
 		hypotArray=np.hypot((bbD-bbM)[:,0],(bbD-bbM)[:,1])
+		hypotArrayS=np.hypot((bbS-bbM)[:,0],(bbD-bbM)[:,1])
 		if hypotArray[0]<hypotArray[2]:
-			ageL+=lin[k,1]-lin[k-1,1]
-			ageR=0
+			if hypotArray[0]<=hypotArrayS[0]:
+				ageL+=lin[k,1]-lin[k-1,1]
+				ageR=0
+			else:
+				ageL=0
+				ageR+=lin[k,1]-lin[k-1,1]
 		elif hypotArray[0]>hypotArray[2]:
-			ageL=0
-			ageR+=lin[k,1]-lin[k-1,1]
+			if hypotArray[0]>hypotArrayS[0]:
+				ageL=0
+				ageR+=lin[k,1]-lin[k-1,1]
+			else:
+				ageL+=lin[k,1]-lin[k-1,1]
+				ageR=0
 	ageL+=t-dTD[0,2]
 	ageR+=t-dTD[0,2]
 	return np.array((ageL,ageR))
@@ -2179,10 +2284,11 @@ def addPoleAge(trIn):
 	'''
 
 	trI=splitIntoList(trIn,3)
+	startProgress('Adding pole age:')
 
 	for k in range(len(trI)):
 		if len(trI[k]):
-			print int(trI[k][0,3]) 
+			progress(np.double(k)/np.double(len(trI)))
 			poleAges=findPoleAge(trI,int(trI[k][0,3]),trI[k][0,2])
 			
 			trI[k]=np.hstack((trI[k],np.zeros((len(trI[k]),2))))
@@ -2197,7 +2303,57 @@ def addPoleAge(trIn):
 				trI[k][:,-1]=age1
 			
 	trOut=revertListIntoArray(trI)
+
+	trOut[:,-2]=trOut[:,-1]
+	endProgress()
+
+	trOut=addPoleID(trOut[:,:-1])
 			
+	return trOut
+
+
+def addPoleID(trIn):
+	'''
+	trOut=addPoleID(trIn) returns a track array with an additional ID at
+	position trOut[:,5] that tracks the oldest pole. New poles are assigned a 
+	new ID.	All other columns are shifted to the right.
+	'''
+
+	trIn=np.hstack((trIn,np.zeros((len(trIn[:,0]),1))))
+
+	trI=splitIntoList(trIn,3)
+
+	poleID=0
+	ids,indx=np.unique(trIn[trIn[:,2].argsort(),3],return_index=True)
+	ids=ids[indx.argsort()]
+#	ids=np.flipud(ids)
+	
+	startProgress('Adding pole ID:')
+	for id in ids.astype('int'):
+		if len(trI[id]):
+			progress(np.double(id)/np.double(len(trI)))
+			daughterID1=trI[id][-1,8]
+			daughterID2=trI[id][-1,9]
+			if trI[id][0,-1]==0:	
+				poleID+=1
+				pID=poleID
+			else:
+				pID=trI[id][0,-1]
+			
+			if (daughterID1>1):
+				if trI[int(daughterID1)][0,12]>=trI[int(daughterID2)][0,12]:
+					dID=daughterID1
+					trI[int(dID)][:,-1]=pID
+				elif trI[int(daughterID1)][0,12]<trI[int(daughterID2)][0,12]:
+					dID=daughterID2
+					trI[int(dID)][:,-1]=pID
+				trI[id][:,-1]=pID
+			else:
+				trI[id][:,-1]=pID
+	
+	trOut=revertListIntoArray(trI)
+	endProgress()
+	trOut[:,[0,1,2,3,4,5,6,7,8,9,10,11,12,13]]=trOut[:,[0,1,2,3,13,4,5,6,7,8,9,10,11,12]]
 	return trOut
 	
 def pathologicalTracks(trIn):
@@ -2409,7 +2565,7 @@ if __name__ == "__main__":
 	else:
 		FILEPATH='./'
 		STABILIZEIMAGES='no'
-		PROCESSFILES='yes'
+		PROCESSFILES='no'
 		LINKTRACKS='yes'
 		PROCESSTRACKS='yes'
 		SAVEPATH='./'
