@@ -1051,8 +1051,8 @@ def processTracks(trIn):
 	tr=joinTracks(tr,1.5,[2,4])
 	
 	# "Splitting Tracks"
+	tr=fixGaps(tr)
 	tr=splitTracks(tr)
-	tr=addCellAge(np.hstack((tr,np.zeros((len(tr),1)))))[:,:-2]
 	
 	# "Finding division events, Merging tracks"
 	tr=mergeTracks(tr)	
@@ -1695,10 +1695,9 @@ def findDaughters(trIn,merge=False):
 	tr[tr[:,5]<meanW,5]=meanW
 	#Find and match division events
 	if len(trIn[0,:])>8:	
-		inList0=tr[(tr[:,8]==tr[:,9])&(tr[:,8]>0),:]
-		inList1=tr[(tr[:,8]>0)&(tr[:,9]==0),:]	
-		mList=matchTracksOverlap(inList1,inList0,2,[0,2])
-		divData0=matchIndices(mList,'Area')	
+		divData0=tr[(tr[:,8]>0)&(tr[:,9]==0),:].take([3,8],axis=1)
+		divData0=np.hstack((divData0,1000*np.ones((len(divData0),1))))
+
 	else:
 		divData0=np.zeros((1,3))	
 	tr0=tr.copy()
@@ -1727,7 +1726,32 @@ def findDaughters(trIn,merge=False):
 	divData=np.vstack((divData0,divData1,divData2))
 	divData=divData[divData[:,0].argsort(),]
 	divData=unique_rows(divData)
+
+	divData=removeImpossibleMatches(trIn,divData)
+
 	return divData
+
+def removeImpossibleMatches(trIn,divData0):
+	'''
+	divData=removeImpossibleMatches(trIn,divData) goes through each matching IDs
+	and makes sure it does not create matching loops (ie. daughter gives birth to mother).
+	'''
+
+	divData=divData0.copy()
+
+	trI=splitIntoList(trIn,3)
+
+	for k in range(len(divData)):
+		dd=divData[k]
+		motherID=dd[0]
+		daughterID=dd[1]
+
+		if trI[int(motherID)][-1,2]>trI[int(daughterID)][-1,2]:
+			divData[k,:]=0
+
+	
+	
+	return divData[divData[:,0]>0,:]
 
 def mergeIndividualTracks(trIn,divData):
 	'''
@@ -1758,7 +1782,8 @@ def mergeIndividualTracks(trIn,divData):
 
 def mergeTracks(trIn):
 	'''
-
+	trOut=mergeTracks(trIn) goes through each division events and attemps
+	to match it with a mother cell. 
 	'''
 	#Fix tracks that skip frames without divisions
 	#trOut=removeShortTracks(trIn,1)
@@ -1789,6 +1814,8 @@ def mergeTracks(trIn):
 	else:
 		matchData=np.zeros((3,1))
 
+	matchData=removeImpossibleMatches(trIn,matchData)
+
 	trT=splitIntoList(trOut,3)
 	ids,indx=np.unique(trOut[trOut[:,2].argsort(),3],return_index=True)
 	ids=ids[indx.argsort()]
@@ -1799,9 +1826,11 @@ def mergeTracks(trIn):
 		progress(np.double(k)/np.double(len(ids)))
 		divD=divData[(divData[:,0]==i)&(divData[:,1]!=i),:]
 		mData=matchData[(matchData[:,0]==i)&(matchData[:,1]!=i),:]
-		if len(divD)>2:
-			divD=divD[divD[:,0]!=divD[:,1],:]
 		
+		if len(divD):
+			divD=divD[divD[:,0]!=divD[:,1],:]
+		if len(mData):
+			mData=mData[mData[:,0]!=mData[:,1],:]
 		
 		if len(divD)==2:
 			trT[int(i)][-1,8]=divD[0,1]
@@ -1874,8 +1903,15 @@ def checkContinuous(trIn,id1,id2):
 	'''
 
 	'''
-	dT1=trIn[id1].copy()
-	dT2=trIn[id2].copy()
+	
+	if trIn[id1][0,2]<trIn[id2][0,2]:
+		dT1=trIn[id1].copy()
+		dT2=trIn[id2].copy()
+	else:
+		dT2=trIn[id1].copy()
+		dT1=trIn[id2].copy()
+			
+	
 
 	L=np.hstack((dT1[:,4],dT2[:,4]))
 	if len(L)>10:
@@ -2077,6 +2113,28 @@ def fixFamilies(trIn):
 	trOut=findFamilyID(trIn[:,0:9])
 	return trOut
 
+def fixGaps(trIn):
+	'''
+	Adds the age of the cells in the last column.
+	It also fills in the blank and missing data (eg. when track skip a time)
+	'''	
+
+	trI=splitIntoList(trIn,3)
+
+	startProgress('Fixing the gaps in each tracks:')
+	for i in range(len(trI)):
+		progress(i/np.double(len(trI)))
+		if len(trI[i])>0:
+			if (np.diff(trI[i][:,2])>1).any():
+				trI[i]=fillGap(trI[i].copy(),age=False)
+	trOut=revertListIntoArray(trI)
+        trOut[(np.diff(trOut[:,2])==0)&(np.diff(trOut[:,3])==0),:]==0
+	trOut=trOut[trOut[:,0]>0,:]
+
+	endProgress()
+	return trOut
+
+
 def addCellAge(trIn):
 	'''
 	Adds the age of the cells in the last column.
@@ -2122,7 +2180,7 @@ def addCellAge(trIn):
 
 	return trOut
 
-def fillGap(tr):
+def fillGap(tr,age=True):
 	'''
 
 	'''
@@ -2131,27 +2189,13 @@ def fillGap(tr):
 	k=0
 	while stop==False:
 		dt=trIn[k+1,2]-trIn[k,2]
-		if dt>1:
+		for i in range(int(dt-1)):
 			dTemp=trIn[k,:].copy()
 			dTemp[2]=trIn[k,2]+1
-			dTemp[11]=trIn[k,11]+1
+			if age:
+				dTemp[11]=trIn[k,11]+1
 			trIn=np.insert(trIn,k+1,dTemp,0)
 			k=k+1
-		if dt>2:
-			dTemp=trIn[k,:].copy()
-			dTemp[2]=trIn[k,2]+1
-			dTemp[11]=trIn[k,11]+1
-			trIn=np.insert(trIn,k+1,dTemp,0)
-			k=k+1
-		elif dt>3:
-			dTemp=trIn[k,:].copy()
-			dTemp[2]=trIn[k,2]+1
-			dTemp[-1]=trIn[k,-1]+1
-			trIn=np.insert(trIn,k+1,dTemp,0)
-			k=k+1
-		elif dt>4:
-			print 'bar'
-
 		if (k+2)==len(trIn):
 			stop=True
 		else:
@@ -2327,11 +2371,13 @@ def addPoleID(trIn):
 	ids,indx=np.unique(trIn[trIn[:,2].argsort(),3],return_index=True)
 	ids=ids[indx.argsort()]
 #	ids=np.flipud(ids)
-	
 	startProgress('Adding pole ID:')
+	k=0
+	kMax=len(ids)
 	for id in ids.astype('int'):
+		k+=1
 		if len(trI[id]):
-			progress(np.double(id)/np.double(len(trI)))
+			progress(np.double(k)/np.double(kMax))
 			daughterID1=trI[id][-1,8]
 			daughterID2=trI[id][-1,9]
 			if trI[id][0,-1]==0:	
