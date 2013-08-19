@@ -202,7 +202,7 @@ def mat2gray(img,scale):
 
 	imgM=img-img.min()+1
 
-	imgOut=imgM*scale/imgM.max()
+	imgOut=imgM*np.double(scale)/imgM.max()
 
 	return imgOut
 
@@ -571,7 +571,7 @@ def drawVoronoi(points,imgIn):
 	return imgIn
 
 
-def labelOverlap(img1,img2):
+def labelOverlap(img1,img2,fraction=False):
 	'''
 	areaList = labelOverlap(img1,img2) finds the overlapping 
 	cells between two images. 
@@ -598,7 +598,10 @@ def labelOverlap(img1,img2):
 		for id in range(numId):
 			areaList[id,0]=unique_vals[id][0]
 			areaList[id,1]=unique_vals[id][1]
-			areaList[id,2]=counts[id]
+			if fraction:
+				areaList[id,2]=counts[id]/np.double(np.sum(index2==unique_vals[id][1]))
+			else:
+				areaList[id,2]=counts[id]
 	else:
 		areaList=np.zeros((1,3))
 	return areaList
@@ -615,12 +618,10 @@ def matchIndices(dataList,matchType='Area'):
 	*if matchType='Distance', it can be used to match the cell 
 	positions between successive frames (favorises smallest distance value)
 	'''
-	startProgress('Matching track using the Hungarian algorithm: ')
 	linkList=[0,0,0];
 	#Loop over each indices to find its related matches.
 	cMax=np.double(dataList[:,0].max())
 	for cellID in np.transpose(np.unique(dataList[:,0])):
-		progress(np.double(cellID)/cMax)
 		stop=0
 		#check is dataList is empty
 		if np.size(dataList,0)>0:
@@ -699,7 +700,6 @@ def matchIndices(dataList,matchType='Area'):
 				if np.size(dataList[:,1]!=id,0)>0:
 					dataList=dataList[dataList[:,1]!=id,:]
 	linkList=linkList[linkList[:,0]>0,:]
-	endProgress()
 
 	return linkList
 
@@ -750,11 +750,11 @@ def putLabelOnImg(fPath,tr,dataRange,dim,num):
 				#plt.plot(boxPts[:,0],boxPts[:,1],'gray',lw=0.5)
 				
 				plt.text(trT[cell,0],trT[cell,1],
-					 str(trT[cell,dim]),color='k',fontsize=3)
+					 str(trT[cell,dim]),color='k',fontsize=6)
 				for c in num:					
 					if trT[cell,dim]==c:
 						plt.text(trT[cell,0],trT[cell,1],
-						 str(trT[cell,dim]),color='r',fontsize=4)
+						 str(trT[cell,dim]),color='r',fontsize=6)
 
 #				if bwI[np.floor(trT[cell,1]),np.floor(trT[cell,0])]>0:
 #					bwI=floodFill(bwI.copy(),(trT[cell,1],trT[cell,0]),trT[cell,9])
@@ -806,7 +806,7 @@ def processImage(imgIn,scaleFact=1,sBlur=0.5,sAmount=0,lnoise=1,
 	bwImg=dilateConnected(bwImg,1)
 	bwImg=segmentCells(bwImg>0)
 	bwImg=fragmentCells(bwImg>0,regionprops(bwImg)[:,6],solidThres)
-	bwImg=removeSmallBlobs(bwImg,100)
+	bwImg=removeSmallBlobs(bwImg,50)
 	bwImg=dilateConnected(bwImg,1)
 	return bwImg
 	
@@ -1221,7 +1221,7 @@ def linkTracks(masterL,LL):
 
 	return tr
 
-def processTracks(trIn):
+def processTracks(trIn,match=True):
 	"""
 	tr=processTracks(trIn) returns a track with linked mother/daughter
 	labels (tr[:,8]), identified family id (tr[:,10]), cell age (tr[:,11])
@@ -1232,15 +1232,16 @@ def processTracks(trIn):
 	# trackIDs so that the mother is on the left).
 	
 
-	# "Smoothing Length and XY-dimensions"
-	tr=smoothDim(trIn,5)
+	tr=trIn.copy()
+	# 'Rematching the tracks'
+		
+	tr=rematchTracks(tr,1.1,(tr[:,1].max()+50,tr[:,0].max()+100))
 	
 	# 'Fixing sudden cell size changes'
 	tr=splitCells(tr)
-
-	
+		
 	# "Bridging track gaps"	
-	tr=joinTracks(tr,1.5,[2,4])
+	tr=joinTracks(tr,2.5,[2,4])
 	
 	# "Splitting Tracks"
 	tr=fixGaps(tr)
@@ -1252,7 +1253,8 @@ def processTracks(trIn):
 
 	# "find family IDs"
 	tr=findFamilyID(tr)
-	tr=matchFamilies(tr)	
+	if match:
+		tr=matchFamilies(tr)	
 	
 	# "fix family IDs"
 
@@ -1339,7 +1341,6 @@ def joinTracks(trIn,dist,dataRange):
 	mList0=fixTracks(trIn,dist,dataRange)
 
 	matchData=matchIndices(mList0,'Area')
-
 	trOut=mergeIndividualTracks(trIn.copy(),matchData.copy())
 
 	return trOut
@@ -1404,15 +1405,15 @@ def removeShortCells(tr,shortCells=6):
 	
 
 
-def removeShortTracks(tr,shortTrack=3):
+def removeShortTracks(tr,shortTrack=3,dim=3):
 	'''
 	tr=removeShortTracks(tr,shortTrack=3) removes 
 	tracks shorter than shortTrack
 	'''
-	trLength=np.histogram(tr[:,3],np.unique(tr[:,3]))
+	trLength=np.histogram(tr[:,dim],np.unique(tr[:,dim]))
         idShort=trLength[1][trLength[0]<=shortTrack]
         k=0
-	trT=splitIntoList(tr,3)
+	trT=splitIntoList(tr,dim)
         #Reassign cell ID
         for id in idShort:
                 trT[int(id)]=[]
@@ -1441,7 +1442,7 @@ def extendShortTracks(trIn,shortTrack=2):
 	return trS
 
 
-def matchTracksOverlap(inList1,inList2,dist,timeRange):
+def matchTracksOverlap(inList1,inList2,dist,timeRange,orient=True):
 	matchList=np.zeros((1,3))
 	startProgress('Matching tracks:')
 	k=0
@@ -1453,7 +1454,7 @@ def matchTracksOverlap(inList1,inList2,dist,timeRange):
 
 		#Find starting points that fall inside the bounding box
 		nearPts=inList2[(inList2[:,2]<=(pts[2]+timeRange[1])) & 
-				(inList2[:,2]>=(pts[2]-timeRange[0])),:]
+				(inList2[:,2]>(pts[2]-timeRange[0])),:]
 
 		centerPt=nearPts[:,0:2]
 		
@@ -1476,93 +1477,93 @@ def matchTracksOverlap(inList1,inList2,dist,timeRange):
 			areaList=np.zeros((1,3))
 			for id in range(len(inPts)):
 				matchingImg=traceOutlines([inPts[id]],1,(np.floor(yRange[1]-yRange[0])+1,np.floor(xRange[1]-xRange[0])+1))
-				areaList=np.vstack((areaList,labelOverlap(dividingImg,matchingImg)))
+				matchL=labelOverlap(dividingImg,matchingImg)
+				matchL[:,2]=matchL[:,2]
+				areaList=np.vstack((areaList,matchL))
 		else:
 			areaList=np.zeros((1,3))
 		if areaList.sum()==0:
 			areaList=np.zeros((1,3))
 		matchList=np.vstack((matchList,areaList))
-	matchList=matchList[matchList[:,0]!=matchList[:,1],:]
+#	matchList=matchList[matchList[:,0]!=matchList[:,1],:]
 	matchList=matchList[matchList[:,2]>0,:]
 	endProgress()
 	return matchList
 
-def matchTracks(inList1,inList2,dist,timeRange):
+def rematchTracks(trIn,dist,dim):
 	'''
-	Find the closest pairs between inList1 and inList2.
-	Normally, inList1 is masterEndList or the list of division events 
-	and  inlist2 is masterStartList timeRange is the time before and 
-	after inList1 where you should look for matching candidates. 
-	This returns an array with [id1, id2, time, distance]
+	Check if the correct cells are matched between two frames.
 	'''
-	matchList=np.zeros((1,4))
-	for pts in inList1:	
-		#Go over each track ends	
-		
-		#Generate bounding box
-		boxPts=getBoundingBox(pts,dist)	
-		boxPath=pa.Path(boxPts.copy())
+
+	inList=splitIntoList(trIn,2)
+	matchList=np.zeros((1,3))
+	startProgress('Rematching tracks:')
+	nextImg=traceOutlines(inList[0],dist,(dim[0],dim[1]))
+	startT=time.time()
+	idSwitch=np.zeros((1,3))
+	for k in range(len(inList)-1):
+		progress(np.double(k)/np.double(len(inList)))
+
 
 		#Find starting points that fall inside the bounding box
-		nearPts=inList2[(inList2[:,2]<=(pts[2]+timeRange[1])) & 
-				(inList2[:,2]>=(pts[2]-timeRange[0])),:]
+		currentImg=nextImg.copy()
+		nextImg=traceOutlines(inList[k+1],dist,(dim[0],dim[1]))
+		matchList=labelOverlap(currentImg,nextImg)
+		if matchList.sum()==0:
+			matchList=np.zeros((1,3))
+		matchList=matchList[matchList[:,2]>0,:]
 
-		centerPt=nearPts[:,0:2]
-		
-		pole1=np.transpose(np.array([nearPts[:,0] + nearPts[:,4]/2*np.sin(nearPts[:,6]*np.pi/180),
-                                         nearPts[:,1] + nearPts[:,5]/2*np.cos(nearPts[:,6]*np.pi/180)]))
-		pole2=np.transpose(np.array([nearPts[:,0] - nearPts[:,4]/2*np.sin(nearPts[:,6]*np.pi/180),
-                                         nearPts[:,1] - nearPts[:,5]/2*np.cos(nearPts[:,6]*np.pi/180)]))
+		newMatchList=matchIndices(matchList,'Area')
 
-		inIndxC=boxPath.contains_points(centerPt)	
-		inIndxL=boxPath.contains_points(pole1)
-		inIndxR=boxPath.contains_points(pole2) 
-		
-		
-		inIndx=inIndxC+inIndxL+inIndxR
+		if np.sum(newMatchList[:,0]!=newMatchList[:,1])>0:
+			misMatch=newMatchList[newMatchList[:,0]!=newMatchList[:,1],:]
+			if misMatch.shape[0]==1:
+				idSwitch=np.vstack((idSwitch,np.array((misMatch[0,0],misMatch[0,1],k))))
+			else:
+				for m in misMatch:
+					idSwitch=np.vstack((idSwitch,np.array((m[0],m[1],k))))
 
-		if inIndx.any():
-			inPts=nearPts[inIndx,:]
-			
-			pole1=np.array([[pts[0] + pts[4]/2*np.sin(pts[6]*np.pi/180),
-				         pts[1] + pts[5]/2*np.cos(pts[6]*np.pi/180)]])
-			pole2=np.array([[pts[0] - pts[4]/2*np.sin(pts[6]*np.pi/180),
-					 pts[1] - pts[5]/2*np.cos(pts[6]*np.pi/180)]])
-			poleIn1=np.array([[inPts[:,0] + inPts[:,4]/2*np.sin(inPts[:,6]*np.pi/180),
-				           inPts[:,1] + inPts[:,5]/2*np.cos(inPts[:,6]*np.pi/180)]])
-			poleIn2=np.array([[inPts[:,0] - inPts[:,4]/2*np.sin(inPts[:,6]*np.pi/180),
-				           inPts[:,1] - inPts[:,5]/2*np.cos(inPts[:,6]*np.pi/180)]])
-	
+	idSwitch=idSwitch[1:]
+	endProgress()	
+
+	trI=splitIntoList(trIn,3)	
+
+	idT=idSwitch.copy()
+
+	for k in np.unique(idT[:,2]):
+		x=idT[idT[:,2]==k,:].copy()
+		xt=idT.copy()
+		if x.shape[0]==1:
+			idT[(xt[:,0]==x[0,0])&(xt[:,2]>x[0,2]),0]=x[0,1]
+			idT[(xt[:,0]==x[0,1])&(xt[:,2]>x[0,2]),0]=x[0,0]
+		elif x.shape[0]>1:
+			intersectID=np.intersect1d(x[:,0],x[:,1])
+			if len(intersectID)>0:
+				for i in intersectID:
+					x[(x[:,0]!=i)&(x[:,1]!=i),:]=0
+			for i in range(x.shape[0]):
+				idT[(xt[:,0]==x[i,0])&(xt[:,2]>x[i,2]),0]=x[i,1]
+				idT[(xt[:,0]==x[i,1])&(xt[:,2]>x[i,2]),0]=x[i,0]
 				
-			#Compute the distance between each one and the track	
-			
 
-			angleDot=10*(1-np.cos(np.abs(pts[6]-inPts[:,6])*np.pi/180))+1
-			
-			VL=eucledianDistances(pole1,poleIn1)
-			VL=angleDot*VL[0][0]
-			VR=eucledianDistances(pole2,poleIn2)
-			VR=angleDot*VR[0][0]
-			VC=eucledianDistances(np.array([pts[0:2]]),inPts[:,0:2])	
-			VC=angleDot*VC[0]
-			
-			V21=eucledianDistances(pole2,poleIn1)
-			V21=angleDot*V21[0][0]
-			V12=eucledianDistances(pole1,poleIn2)
-			V12=angleDot*V12[0][0]
 
-			T=10*abs(inPts[:,2]-pts[2]-1)
-			#Put the possible candidates into an array		
-			for id in range(len(VL)):
-				V=np.array([VL[id],VR[id],VC[id],V12[id],V21[id]])
-				Dist=np.array([[pts[3],inPts[id,3],
-					     pts[2],T[id]+V.min()]]) 			
-				matchList=np.append(matchList,Dist,0)
+	for k in range(len(idSwitch)-1):
+		x=idT[k]
+		y=idSwitch[k]
+		if x[0]!=0:
+			trI[int(y[1])][trI[int(y[1])][:,2]>x[2],3]=x[0]
+			trI[int(y[0])][trI[int(y[0])][:,2]>x[2],3]=x[1]
+	
 
-	matchList[matchList[:,0]==matchList[:,1],:]=0	
-	matchList=matchList[matchList[:,0]>0,:]
+	trOut=revertListIntoArray(trI)
 
-	return matchList
+        trOut=trOut[trOut[:,2].argsort(-1,'mergesort'),]
+        trOut=trOut[trOut[:,3].argsort(-1,'mergesort'),]
+                                
+        trOut[(np.diff(trOut[:,2])==0)&(np.diff(trOut[:,3])==0),:]=0
+        trOut=trOut[trOut[:,0]>0,:]
+
+	return trOut
 
 def splitIntoList(listIn,dim):
 	'''
@@ -1854,7 +1855,6 @@ def splitCells(trIn):
 			L=trI[i][:,4].copy()
 			Lp=removePlateau(L)
 			jumpID=((L-Lp)>0).nonzero()[0]
-			jumpID=jumpID+2
 			endI=len(L)
 			if jumpID.any():
 				id0=jumpID[0]
@@ -1875,12 +1875,11 @@ def splitCells(trIn):
 					
 						id0=id+0.
 				freeID=freeID[2:]
-			jumpIDDown=((L-removePlateau(L))<0).nonzero()[0]
-			jumpIDDown=jumpIDDown+2
+			jumpIDDown=((L-Lp)<0).nonzero()[0]
 			if jumpIDDown.any():
 				for id in jumpIDDown:
 					if (id>3)&(id<(len(L)-3)):
-						trI[i][id,4]=trI[i][id,4]+np.array((Lmean,trI[i][id,4])).min()
+						trI[i][id,4]=Lp[id]
 	trOut=revertListIntoArray(trI)
 
 	trOut=extendShortTracks(trOut,1)
@@ -1901,11 +1900,6 @@ def findDaughters(trIn,merge=False):
 	'''
 	tr=trIn.copy()
 
-	meanL=np.mean(tr[:,4])
-	meanW=np.mean(tr[:,5])
-
-	tr[tr[:,4]<meanL,4]=meanL
-	tr[tr[:,5]<meanW,5]=meanW
 	#Find and match division events
 	if len(trIn[0,:])>8:	
 		divData0=tr[(tr[:,8]>0)&(tr[:,9]==0),:].take([3,8],axis=1)
@@ -1914,7 +1908,7 @@ def findDaughters(trIn,merge=False):
 	else:
 		divData0=np.zeros((1,3))	
 	tr0=tr.copy()
-	mList0=fixTracks(tr0,2,[2,4])
+	mList0=fixTracks(tr0,2.5,[2,4])
 	#if np.sum(mList0[:,3]<meanL):	
 #		mList1=mList0[mList0[:,3]<meanL,:]
 #	else:
@@ -2132,53 +2126,6 @@ def checkContinuous(trIn,id1,id2):
 
 
 	
-def renameTracks(trIn):
-	'''
-	This script changes the track assignment list to remove
-	tracks which are childless orphans. 	
-	'''
-	#trIn=removeShortTracks(trIn,0)
-	trI=splitIntoList(trIn,3)
-	trOut=np.zeros((1,9))
-	dT2=np.zeros((1,9))
-	k=0
-	#Find ids of cells that divide
-	divID=np.unique(np.abs(trIn[trIn[:,8]!=0,3]))
-	IdNum=0
-	newIndex=np.zeros((np.max(trIn[:,3]),1))
-	for id in np.unique(divID):
-		IdNum=IdNum+1
-		#relabel track
-		newIndex[IdNum,0]=id
-		dT=trI[int(id)]
-		#find number of divisions		
-		nDiv=(dT[:,8]>0).nonzero()[0]
-		#Loop over each division
-		for i in range(len(nDiv)):
-			nD=(divID==dT[nDiv[i],8]).nonzero()[0]
-			if nD.any(): #if daughter also divides, do not touch it
-				dT[nDiv[i],8]=nD[0]+1
-			else: #If it didn't divide, relabel it
-				k=k+1
-				dId=dT[nDiv[i],8]
-				newID=len(divID)+k
-				newIndex[newID]=dId
-	trOut=trIn.copy()
-	trOut[:,3]=0
-	for id in range(len(newIndex)):
-		if not newIndex[id]==0:		
-			trOut[trIn[:,3]==newIndex[id],3]=id
-			trOut[trIn[:,8]==newIndex[id],8]=id
-			trOut[trIn[:,8]==-newIndex[id],8]=-id
-	trOut=trOut[trOut[:,3]>0,:]
-
-        trOut=trOut[trOut[:,2].argsort(-1,'mergesort'),]
-        trOut=trOut[trOut[:,3].argsort(-1,'mergesort'),]
-
-	#Remove multiply assigned cells	
-#	trOut=trOut[np.diff(trOut[:,2])>0,:]
-
-	return trOut
 
 def findFamilyID(trIn):
 	"""
@@ -2222,7 +2169,7 @@ def matchFamilies(trIn):
 	This script matches the start of a new family with 
 	the closest cell.	
 	'''
-	#trS=removeShortTracks(trIn,1)
+	trIn=removeShortTracks(trIn,50,10)
 	freeID=np.setdiff1d(np.arange(2*np.max(trIn[:,3])),np.unique(trIn[:,3]))
 	freeID=freeID[1:].copy()
 	trIn=np.vstack((trIn,trIn[0]))
@@ -2246,15 +2193,14 @@ def matchFamilies(trIn):
 	trI2=splitIntoList(trIn,3)
 
 	for i in range(len(trI2)):
-		if len(trI2[i])>21:
-			trI2[i]=trI2[i][10:-10,:].copy()
+		if len(trI2[i])>31:
+			trI2[i]=trI2[i][15:-15,:].copy()
 		else:
 			trI2[i]=[]
 
 	trC=revertListIntoArray(trI2)
 
-	listOfMatches=matchTracksOverlap(famStart,trC,3,[5,-1])	
-
+	listOfMatches=matchTracksOverlap(famStart.copy(),trC.copy(),5,[5,-1])	
 	matchData=matchIndices(listOfMatches,'Area')
 	for md in matchData:
 		trI[int(md[0])][0,8:10]=md[1]
@@ -2460,7 +2406,7 @@ def smoothDim(trIn,dim):
 		dT=trI[id]
 		if len(dT):
 			LL=removePeaks(dT[:,dim],'Down')
-			if (dim==4) or (dim==5):
+			if (dim==4) or (dim==5): 
 				LL=removePlateau(LL)
 			trI[id][:,dim]=LL.copy()
 
@@ -2845,9 +2791,9 @@ if __name__ == "__main__":
 	else:
 		FILEPATH='./'
 		STABILIZEIMAGES='no'
-		PROCESSFILES='no'
-		LINKTRACKS='yes'
-		PROCESSTRACKS='yes'
+		PROCESSFILES='yes'
+		LINKTRACKS='no'
+		PROCESSTRACKS='no'
 		SAVEPATH='./'
 		MULTIPLEREGIONS='no'
 		NUMBEROFREGIONS=1		
