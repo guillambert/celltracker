@@ -1050,18 +1050,17 @@ def stabilizeImages(fPath,endsWith='tif',SAVE=True,preProcess=False):
 	k=0
 	for fname in np.transpose(tifList):
 		k=k+1	
-
 		img=cv.imread(fPath+fname,-1)
 
 		if k>1:	
 
 			if preProcess:
-				A=(cv.matchTemplate(np.uint8(bpass(img0/32.,1,10)),
-						np.uint8(bpass(img[borderSize:-borderSize,borderSize:-borderSize]/32.,1,10)),
+				A=(cv.matchTemplate(np.uint8(bpass(mat2gray(img0,255),1,10)),
+						np.uint8(bpass(mat2gray(img[borderSize:-borderSize,borderSize:-borderSize],255),1,10)),
 						cv.cv.CV_TM_CCORR_NORMED))
 			else:
-				A=(cv.matchTemplate(np.uint8(img0/32.),
-						np.uint8(img[borderSize:-borderSize,borderSize:-borderSize]/32.),
+				A=(cv.matchTemplate(np.uint8(mat2gray(img0,255)),
+						np.uint8(mat2gray(img[borderSize:-borderSize,borderSize:-borderSize],255)),
 						cv.cv.CV_TM_CCORR_NORMED))			
 
 			maxLoc=(A==A.max()).nonzero()
@@ -1253,6 +1252,7 @@ def processTracks(trIn,match=True):
 
 	# "find family IDs"
 	tr=findFamilyID(tr)
+
 	if match:
 		tr=matchFamilies(tr)	
 	
@@ -2791,9 +2791,9 @@ if __name__ == "__main__":
 	else:
 		FILEPATH='./'
 		STABILIZEIMAGES='no'
-		PROCESSFILES='yes'
-		LINKTRACKS='no'
-		PROCESSTRACKS='no'
+		PROCESSFILES='no'
+		LINKTRACKS='yes'
+		PROCESSTRACKS='yes'
 		SAVEPATH='./'
 		MULTIPLEREGIONS='no'
 		NUMBEROFREGIONS=1		
@@ -2823,7 +2823,7 @@ if __name__ == "__main__":
 			LL=loadListOfArrays(SAVEPATH+'LL_0.npz')
 			tr=linkTracks(masterL,LL)
 			if PROCESSTRACKS=='yes':
-				tr=processTracks(tr)
+				tr=processTracks(tr,match=False)
 			with open(SAVEPATH+'/trData_'+str(id)+'.dat', 'wb') as f:	
 				f.write(b'# xPos yPos time cellID cellLength cellWidth cellAngle avgIntensity divisionEventsLeft divisionEventsRight familyID cellAge elongationRate\n')
 				np.savetxt(f,tr)
