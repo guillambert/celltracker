@@ -136,31 +136,31 @@ def seg_intersect(a1,a2, b1,b2) :
     db = b2-b1
     dp = a1-b1
     dap = perp(da)
-    denom = dot( dap, db)
-    num = dot( dap, dp )
+    denom = np.dot( dap, db)
+    num = np.dot( dap, dp )
     return (num / denom)*db + b1
 
 def resetIntersect(x0,y0,x1,y1):
 	if (y0<0.):
-		x0,y0=seg_intersect(array([double(x0),double(y0)]),
-				    array([double(x1),double(y1)]),
-				    array([-100000000.,0.]),
-				    array([100000000.,0.]))
+		x0,y0=seg_intersect(np.array([np.double(x0),np.double(y0)]),
+				    np.array([np.double(x1),np.double(y1)]),
+				    np.array([-100000000.,0.]),
+				    np.array([100000000.,0.]))
 	if (y1<0.):
-		x1,y1=seg_intersect(array([double(x0),double(y0)]),
-				    array([double(x1),double(y1)]),
-				    array([-100000000.,0.]),
-				    array([100000000.,0.]))
+		x1,y1=seg_intersect(np.array([np.double(x0),np.double(y0)]),
+				    np.array([np.double(x1),np.double(y1)]),
+				    np.array([-100000000.,0.]),
+				    np.array([100000000.,0.]))
 	if (y0>1000.):
-		x0,y0=seg_intersect(array([double(x0),double(y0)]),
-				    array([double(x1),double(y1)]),
-				    array([-100000000.,1000.]),
-				    array([100000000.,10000.]))
+		x0,y0=seg_intersect(np.array([np.double(x0),np.double(y0)]),
+				    np.array([np.double(x1),np.double(y1)]),
+				    np.array([-100000000.,1000.]),
+				    np.array([100000000.,10000.]))
 	if (y1>1000.):
-		x1,y1=seg_intersect(array([double(x0),double(y0)]),
-				    array([double(x1),double(y1)]),
-				    array([-100000000.,1000.]),
-				    array([100000000.,10000.]))
+		x1,y1=seg_intersect(np.array([np.double(x0),np.double(y0)]),
+				    np.array([np.double(x1),np.double(y1)]),
+				    np.array([-100000000.,1000.]),
+				    np.array([100000000.,10000.]))
 	return x0,y0,x1,y1
 
 
@@ -487,6 +487,7 @@ def dilateConnected(imgIn,nIter):
 	for i in range(1,bwLD.max()+1):
 		imgOut=imgOut +  np.double(cv.dilate(np.uint16(bwLD==i),
 			                   None,iterations=(nIter+2)))
+	
 	dilImg=cv.dilate(bwImgD,None,iterations=nIter)
 	skelBnd = skeletonTransform(np.uint8(imgOut>1))
 	skelBnd = cv.dilate(skelBnd,None,iterations=1)
@@ -515,7 +516,7 @@ def skeletonTransform(bwImg):
 		if not cv.countNonZero(img):
 			done = True
 	#Remove isolated pixels
-
+	
 	skel = skel - cv.filter2D(skel,-1,np.array([[-9,-9,-9],[-9,1,-9],[-9,-9,-9]],dtype=float))
 
 	return skel
@@ -531,8 +532,8 @@ def drawVoronoi(points,imgIn):
 
 	imgIn=np.double(imgIn)
 	
-	lenX=double(size(imgIn,1))
-	lenY=double(size(imgIn,0))
+	lenX=np.double(np.size(imgIn,1))
+	lenY=np.double(np.size(imgIn,0))
 
 	tri=Delaunay(points)
 	# Triangle vertices
@@ -822,26 +823,15 @@ def preProcessCyano(brightImg,chlorophyllImg=0,mask=False):
 		cellMask = cv.dilate(np.uint8(bImg>50),None,iterations=15)
 	else:
 		cellMask= brightImg*0+1
-	processedBrightfield = bpass(brightImg,1,10)>25
-
-	dilatedIm=cv.dilate(removeSmallBlobs(processedBrightfield*cellMask,75),None,iterations=2)
+	processedBrightfield = cv.adaptiveThreshold(np.uint8(mat2gray(bpass(brightImg,1,10),255)),
+					255,cv.ADAPTIVE_THRESH_GAUSSIAN_C,cv.THRESH_BINARY,501,0)
+#	dilatedIm=cv.dilate(removeSmallBlobs(processedBrightfield*cellMask,125),None,iterations=2)
+	dilatedIm=removeSmallBlobs(processedBrightfield*cellMask,125)
 #	dilatedIm=(removeSmallBlobs(processedBrightfield*cellMask,15))
-	if np.sum(cellMask==0):
-		seedPt = ((1-cellMask).nonzero()[0][10],(1-cellMask).nonzero()[1][10])
+	seedPt = ((1-cellMask).nonzero()[0][10],(1-cellMask).nonzero()[1][10])
 
-		imgOut=dilateConnected(1-floodFill(dilatedIm,seedPt,1),2)
-#		imgOut=(1-floodFill(dilatedIm,seedPt,1))
-	else:
-		imgOut=dilateConnected(1-dilatedIm,2)
+	imgOut=255-floodFill(dilatedIm,seedPt,255)
 
-	#imgOut=np.uint8(processImage(imgOut.copy(),thres=0))
-
-#	imgOut=processImage(-imgOut+(bpass(chlorophyllImg,1,10)>10),thres=0)
-
-#	imgOut=removeSmallBlobs(imgOut,75)	
-	#Segment Cells accorging to solidity
-#	imgOut=segmentCells(imgOut>0,regionprops(imgOut>0,1)[:,6],
-#			   solidThres,2)	
 	return np.uint8(imgOut)
 
 def peakdet(v, delta, x = None):
@@ -1613,8 +1603,15 @@ def revertListIntoArray(listIn):
 			arrayOut[k]=np.vstack((arrayOut[k],listIn[id]))
 		if np.mod(id,nID)==0:
 			k=k+1
-
-	arrayOutAll=arrayOut[1].copy()*0
+	m=0
+	stop=False
+	while not stop:
+		try:
+			arrayOutAll=arrayOut[m].copy()*0
+			stop=True
+		except:
+			m+=1	
+			stop=False
 	for id in range(0,len(arrayOut)):
 		if np.size(arrayOut[id])>1:
 			arrayOutAll=np.vstack((arrayOutAll,arrayOut[id]))	
@@ -1634,7 +1631,10 @@ def findDivisionEvents(trIn):
 	for tr in trT:
 		if np.size(tr)>1:
 			if len(tr)>10:
-				divEvents=findDivs(tr[:,4])
+				tr0=tr.copy()
+				tr0[(np.diff(tr0[:,2])==0),:]=0
+				tr0=tr0[tr0[:,0]>0,:]
+				divEvents=findDivs(tr0[:,4])
 				if divEvents.any():
 					divTimes=tr[divEvents.tolist(),2]
 					divT=np.vstack([divTimes*0 + tr[0,3],
@@ -1670,7 +1670,7 @@ def findDivs(L):
 	divTimes[np.diff(divTimes)==1]=0
 	divTimes=divTimes[divTimes!=0]
 	divTimes=divTimes[divTimes>3]
-	return divTimes
+	return divTimes.astype('int')
 
 
 def removePeaks(Lin,mode='Down'):
@@ -1758,19 +1758,20 @@ def removePlateau(Lin):
 	jumpIDdown=jumpIDdown[jumpIDdown>0]
 	jumpIDdown=jumpIDdown[jumpIDdown<(len(LL)-1)]
 
+	nextDown=-1
+	previousDown=-1
+
 	for id in jumpIDup:
-		nextDown=-1
-		previousDown=-1
 		if jumpIDdown[jumpIDdown>id].any():
 			nextDown=jumpIDdown[jumpIDdown>id][0]
 		if jumpIDdown[jumpIDdown<=id].any():
 			previousDown=jumpIDdown[jumpIDdown<=id][-1]
-
+		
 		if nextDown>0:
 			jumpDiffDown=np.abs(np.abs(LL[id]-LL[id+1])-np.abs(LL[nextDown]-LL[nextDown+1]))
 		else:
 			jumpDiffDown=np.Inf
-		if previousDown>0:
+		if previousDown>=-1:
 			jumpDiffUp=np.abs(np.abs(LL[id]-LL[id+1])-np.abs(LL[previousDown]-LL[previousDown+1]))
 		else:
 			jumpDiffUp=np.Inf	
@@ -1778,6 +1779,8 @@ def removePlateau(Lin):
 			LL[(id+1):(nextDown+1)]=LL[(id+1):(nextDown+1)]-(LL[id+1]-LL[id])
 		elif jumpDiffUp<jumpDiffDown:
 			LL[(previousDown+1):(id+1)]=LL[(previousDown+1):(id+1)]+(LL[id+1]-LL[id])
+		nextDown=-10
+		previousDown=-10
 	return LL
 
 
@@ -2153,8 +2156,8 @@ def findFamilyID(trIn):
 					famList=np.unique(np.hstack([famList,
 					                     famList0]))
 			if np.array_equal(famList,famList1):
-				stop=True	
-
+				stop=True
+		famList=famList[famList>0]	
 		for id in famList:
 			trI[int(id)][:,-1]=famID
 		cellIdList=np.setdiff1d(cellIdList,famList)
@@ -2181,9 +2184,10 @@ def matchFamilies(trIn):
 	
 	famStart=trIn[0]
 	for tt in trFam:
-		if len(tt[:,0])>10:
-			tt=tt[tt[:,2].argsort(-1,'mergesort'),]
-			famStart=np.vstack((famStart,tt[0]))
+		if len(tt):
+			if len(tt[:,0])>10:
+				tt=tt[tt[:,2].argsort(-1,'mergesort'),]
+				famStart=np.vstack((famStart,tt[0]))
 			
 	initialIDs=np.unique(trIn[trIn[:,2]<25,10])
 	for i in initialIDs:
@@ -2201,7 +2205,10 @@ def matchFamilies(trIn):
 	trC=revertListIntoArray(trI2)
 
 	listOfMatches=matchTracksOverlap(famStart.copy(),trC.copy(),5,[5,-1])	
-	matchData=matchIndices(listOfMatches,'Area')
+	if len(listOfMatches):
+		matchData=matchIndices(listOfMatches,'Area')
+	else:
+		matchData=[]
 	for md in matchData:
 		trI[int(md[0])][0,8:10]=md[1]
 		
@@ -2418,7 +2425,12 @@ def extractLineage(trI,id,dim=8):
 	lin=extrackLineage(trIn,id) return the lineage starting from id .
 		The data is ordered chronologically as lin[n]=[motherID, time]
 	'''
-
+	try:
+		trI=splitIntoList(trI,3)
+	except:
+		pass		
+	
+	
 	t=trI[id][0,2]
 	lin=np.array((id,t))
 	flip=True
@@ -2431,6 +2443,8 @@ def extractLineage(trI,id,dim=8):
 			lin=np.vstack((lin,np.array((motherID,t))))
 			id=int(motherID)
 		else:
+			t=0
+		if trI[id].shape[0]==1:
 			t=0
 	if lin.ndim>1:
 		lin=np.flipud(lin)
@@ -2579,6 +2593,16 @@ def addPoleID(trIn):
 	trOut=revertListIntoArray(trI)
 	endProgress()
 	trOut[:,[0,1,2,3,4,5,6,7,8,9,10,11,12,13]]=trOut[:,[0,1,2,3,13,4,5,6,7,8,9,10,11,12]]
+
+	trOut=trOut[trOut[:,2].argsort(-1,'mergesort'),]	
+	trOut=trOut[trOut[:,4].argsort(-1,'mergesort'),]	
+
+	trOut[(np.diff(trOut[:,4])==0)&(np.diff(trOut[:,2])==0)&(trOut[:-1,9]==0),:]=0
+	trOut=trOut[trOut[:,0]>0,:]
+
+	trOut=trOut[trOut[:,2].argsort(-1,'mergesort'),]	
+	trOut=trOut[trOut[:,3].argsort(-1,'mergesort'),]	
+
 	return trOut
 	
 def pathologicalTracks(trIn):
@@ -2798,6 +2822,7 @@ if __name__ == "__main__":
 		MULTIPLEREGIONS='no'
 		NUMBEROFREGIONS=1		
 		LIMITFILES=0
+		MATCHF=True
 
 	np.savez(SAVEPATH+'processFiles.npz',lnoise=lnoise,lobject=lobject,boxSize=boxSize)
 
@@ -2823,9 +2848,9 @@ if __name__ == "__main__":
 			LL=loadListOfArrays(SAVEPATH+'LL_0.npz')
 			tr=linkTracks(masterL,LL)
 			if PROCESSTRACKS=='yes':
-				tr=processTracks(tr,match=False)
+				tr=processTracks(tr,match=MATCHF)
 			with open(SAVEPATH+'/trData_'+str(id)+'.dat', 'wb') as f:	
-				f.write(b'# xPos yPos time cellID cellLength cellWidth cellAngle avgIntensity divisionEventsLeft divisionEventsRight familyID cellAge elongationRate\n')
+				f.write(b'# xPos yPos time cellID PoleID cellLength cellWidth cellAngle avgIntensity divisionEventsLeft divisionEventsRight familyID cellAge OldestPoleAge elongationRate\n')
 				np.savetxt(f,tr)
 			print 'The analysis of region '+str(id)+' is complete. Data saved as '+SAVEPATH+'trData_'+str(id)+'.dat'	
 		
