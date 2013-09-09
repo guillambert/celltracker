@@ -109,7 +109,7 @@ def bpass(img, lnoise, lobject):
     image_array = np.double(img)
 
     #Create the gaussian and boxcar kernels
-    gauss_kernel = anormalize(signal.gaussian(np.floor(10*lnoise)+1, lnoise))
+    gauss_kernel = anormalize(signal.gaussian(np.floor(10*lnoise) + 1, lnoise))
     boxcar_kernel = anormalize(signal.boxcar(2*lobject))
     #Apply the filter to the input image
     gconv0 = cv.filter2D(np.transpose(image_array), -1, gauss_kernel)
@@ -117,7 +117,7 @@ def bpass(img, lnoise, lobject):
     bconv0 = cv.filter2D(np.transpose(image_array), -1, boxcar_kernel)
     bconv = cv.filter2D(np.transpose(bconv0), -1, boxcar_kernel)
     #Create the filtered image
-    filtered = gconv-bconv
+    filtered = gconv - bconv
     #Remove the values lower than zero
     filtered[filtered < 0] = 0
     #Output the final image
@@ -130,7 +130,7 @@ def mat2gray(img, scale):
     imgOut = mat2gray(img, scale) return a rescaled matrix from 1 to scale
     '''
 
-    imgM = img-img.min()+1
+    imgM = img - img.min() + 1
 
     imgOut = imgM*np.double(scale)/imgM.max()
 
@@ -148,7 +148,7 @@ def unsharp(img, sigma=5, amount=10):
         #imgB=cv.GaussianBlur(img, (img.shape[0]-1, img.shape[1]-1), sigma)
         imgB = cv.GaussianBlur(img, (img.shape[0]-(img.shape[0]+1) % 2,
                                img.shape[1]-(img.shape[1]+1) % 2), sigma)
-        imgS = img*(1+amount) + imgB*(-amount)
+        imgS = img*(1 + amount) + imgB*(-amount)
         if amount:
             return imgS
         else:
@@ -175,7 +175,7 @@ def regionprops(bwImage, scaleFact=1):
     k = 0
     for i in range(numC):
         if len(csr[i]) >= 5:
-            k = k+1
+            k = k + 1
     majorAxis = np.zeros((k, 1), dtype=float)
     minorAxis = np.zeros((k, 1), dtype=float)
     Orientation = np.zeros((k, 1), dtype=float)
@@ -206,7 +206,7 @@ def regionprops(bwImage, scaleFact=1):
                 ConvexArea = cv.contourArea(ConvexHull)
                 # Solidity : =  Area/ConvexArea
                 Solidity[k] = np.divide(Area[k], ConvexArea)
-            k = k+1
+            k = k + 1
     allData = np.zeros((k, 7))
     allData[:, 0] = EllipseCentreX.squeeze()/scaleFact
     allData[:, 1] = EllipseCentreY.squeeze()/scaleFact
@@ -238,7 +238,7 @@ def bwlabel(bwImg):
     k = 0
     for i in range(numC):
         if len(csl[i]) >= 5:
-            k = k+1
+            k = k + 1
             cv.drawContours(bw, csl, i, k, thickness=-1)
         else:
             cv.drawContours(bw, csl, i, 0, thickness=-1)
@@ -324,14 +324,14 @@ def avgCellInt(rawImg, bwImg):
     k = 0
     for i in range(0, numC):
         if len(csa[i]) >= 5:
-            k = k+1
-    avgCellI = np.zeros((k+1, 1), dtype=float)
+            k = k + 1
+    avgCellI = np.zeros((k + 1, 1), dtype=float)
     k = 0
     for i in range(0, numC):
         if len(csa[i]) >= 5:
             # Average Pixel value
             bw = np.zeros(bwImg0.shape)
-            k = k+1
+            k = k + 1
             cv.drawContours(bw, csa, i, 1, thickness=-1)
             regionMask = (bw == (1))
             avgCellI[k] = np.sum(rawImg*regionMask)/np.sum(regionMask)
@@ -374,15 +374,15 @@ def fragmentCells(bwImg, propIndex, thres, iterN=1):
 
     if lowSIndex[0].any():
         for id in np.transpose(lowSIndex):
-            lowImg = lowImg + np.double(labelImg == (id+1))
+            lowImg = lowImg + np.double(labelImg == (id + 1))
         lowImg = cv.erode(np.uint8(lowImg), None, iterations=iterN)
         m = segmentCells(lowImg)
 
         m = dilateConnected(m, iterN)
 
         for id in np.transpose(lowSIndex):
-            bwImg = bwImg - np.double(labelImg == (id+1))
-        return np.uint8(bwImg+m)
+            bwImg = bwImg - np.double(labelImg == (id + 1))
+        return np.uint8(bwImg + m)
 
     else:
         return bwImg
@@ -399,9 +399,9 @@ def dilateConnected(imgIn, nIter):
     bwImgD = np.uint8(imgIn.copy())
     imgOut = np.double(imgIn*0)
     bwLD = bwlabel(bwImgD)
-    for i in range(1, bwLD.max()+1):
+    for i in range(1, bwLD.max() + 1):
         imgOut = imgOut + np.double(cv.dilate(np.uint16(bwLD == i),
-                                    None, iterations=(nIter+2)))
+                                    None, iterations=(nIter + 2)))
 
     dilImg = cv.dilate(bwImgD, None, iterations=nIter)
     skelBnd = skeletonTransform(np.uint8(imgOut > 1))
@@ -515,14 +515,14 @@ def matchIndices(dataList, matchType='Area'):
             #Create a label for each cell
             # (instead of the cell ID,  which may have gaps)
             k0 = 0
-            assign0 = np.zeros((np.max(matchData[:, 0])+1))
-            assign1 = np.zeros((np.max(matchData[:, 1])+1))
+            assign0 = np.zeros((np.max(matchData[:, 0]) + 1))
+            assign1 = np.zeros((np.max(matchData[:, 1]) + 1))
             for i in np.transpose(np.unique(matchData[:, 0])):
-                k0 = k0+1
+                k0 = k0 + 1
                 assign0[i] = k0
             k1 = 0
             for i in np.transpose(np.unique(matchData[:, 1])):
-                k1 = k1+1
+                k1 = k1 + 1
                 assign1[i] = k1
 
             k = np.max([k0, k1])
@@ -551,11 +551,11 @@ def matchIndices(dataList, matchType='Area'):
             linkList0 = np.zeros((len(matchData[:, 0]), 3))
             #Put result into the linkList0 array
             for i in range(len(inds)):
-                if ((inds[i][0]+1) <= k0) & ((inds[i][1]+1) <= k1):
+                if ((inds[i][0] + 1) <= k0) & ((inds[i][1] + 1) <= k1):
                     linkList0[i, 0] = np.nonzero(assign0 ==
-                                                 (inds[i][0]+1))[0][0]
+                                                 (inds[i][0] + 1))[0][0]
                     linkList0[i, 1] = np.nonzero(assign1 ==
-                                                 (inds[i][1]+1))[0][0]
+                                                 (inds[i][1] + 1))[0][0]
                     if matchType is 'Area':
                         linkList0[i, 2] = A[inds[i][0]][inds[i][1]]
                     elif matchType is 'Distance':
@@ -600,8 +600,8 @@ def putLabelOnImg(fPath, tr, dataRange, dim, num):
         trT = trTime[t]
         if tifList:
             fname = tifList[t]
-            print fPath+fname
-            img = cv.imread(fPath+fname, -1)
+            print fPath + fname
+            img = cv.imread(fPath + fname, -1)
             img = cv.transpose(img)
             bwImg = processImage(img, scaleFact=1, sBlur=0.5,
                                  sAmount=0, lnoise=1, lobject=7,
@@ -692,7 +692,7 @@ def preProcessCyano(brightImg, chlorophyllImg=0, mask=False):
         bImg = bpass(chlorophyllImg, 1, 10)
         cellMask = cv.dilate(np.uint8(bImg > 50), None, iterations=15)
     else:
-        cellMask = brightImg*0+1
+        cellMask = brightImg*0 + 1
     brightScaled = mat2gray(bpass(brightImg, 1, 10), 255)
     processedBrightfield = cv.adaptiveThreshold(np.uint8(brightScaled), 255,
                                                 cv.ADAPTIVE_THRESH_GAUSSIAN_C,
@@ -705,7 +705,7 @@ def preProcessCyano(brightImg, chlorophyllImg=0, mask=False):
     dilatedIm[:, -10:] = 255
     bwL = bwlabel(dilatedIm)
     rP = regionprops(dilatedIm)
-    idMax = (rP[:, 5] == rP[:, 5].max()).nonzero()[0][0]+1
+    idMax = (rP[:, 5] == rP[:, 5].max()).nonzero()[0][0] + 1
     dilatedIm[bwL == idMax] = 255
 
     imgOut = 255-dilatedIm.copy()
@@ -771,7 +771,7 @@ def peakdet(v,  delta,  x=None):
                 mnpos = x[i]
                 lookformax = False
         else:
-            if this > mn+delta:
+            if this > mn + delta:
                 mintab.append((mnpos,  mn))
                 mx = this
                 mxpos = x[i]
@@ -805,17 +805,17 @@ def phaseLabelling(dataIn):
     regionList = 0.
 
     for pt in range(len(pk1)-1):
-        minPos = (pk1[pt, 0] < pk2[:, 0]) & (pk1[pt+1, 0] > pk2[:, 0])
+        minPos = (pk1[pt, 0] < pk2[:, 0]) & (pk1[pt + 1, 0] > pk2[:, 0])
         if np.sum(minPos):
             regionList = np.hstack((regionList, pk1[pt, 0]))
             minPos = pk2[minPos, 0][0]
             regionList = np.hstack((regionList,
-                                    int(minPos/2.+pk1[pt, 0]/2.)))
+                                    int(minPos/2. + pk1[pt, 0]/2.)))
             regionList = np.hstack((regionList,
                                     int(minPos)))
             regionList = np.hstack((regionList,
-                                    int(minPos/2.+pk1[pt+1, 0]/2.)))
-            regionList = np.hstack((regionList, pk1[pt+1, 0]))
+                                    int(minPos/2. + pk1[pt + 1, 0]/2.)))
+            regionList = np.hstack((regionList, pk1[pt + 1, 0]))
     if pk2[-1, 0] > pk1[-1, 0]:
         regionList = np.hstack((regionList, int(pk1[-1, 0]/2.+pk2[-1, 0]/2.)))
         regionList = np.hstack((regionList, pk2[-1, 0]))
@@ -830,14 +830,14 @@ def phaseLabelling(dataIn):
     firstMin = int(minPt[0, 0])
     k = 0
     for id in range(firstMin, len(dataOut[0])-1):
-        intLabel[dataOut[0, id]:dataOut[0, (id+1)]] = k
-        k = k+1
+        intLabel[dataOut[0, id]:dataOut[0, (id + 1)]] = k
+        k = k + 1
         k = k % 4
-    intLabel[int(dataOut[0, (id+1)]):] = k
+    intLabel[int(dataOut[0, (id + 1)]):] = k
     k = 3
     for id in range(firstMin, 0, -1):
         intLabel[dataOut[0, id-1]:dataOut[0, id]] = k
-        k = k-1
+        k = k - 1
         k = k % 4
     intLabel[0:int(dataOut[0, id-1])] = k
 
@@ -872,7 +872,7 @@ def gradualIntensity(intIn):
     transitionPos = (np.diff(intIn) != 0).nonzero()[0]
     if len(transitionPos) == 0:
         return intIn
-    val0 = intIn[0]-1
+    val0 = intIn[0] - 1
     val1 = intIn[transitionPos[0]]
 
     if val0 == 3:
@@ -883,7 +883,7 @@ def gradualIntensity(intIn):
 
     for i in range(1, len(transitionPos)):
         startPos = int(transitionPos[i-1])
-        endPos = int(transitionPos[i])+1
+        endPos = int(transitionPos[i]) + 1
         val0 = intIn[startPos]
         val1 = intIn[endPos-1]
         if val0 == 3:
@@ -899,7 +899,7 @@ def gradualIntensity(intIn):
     gradInt = np.double(np.linspace(val0, val1, len(intOut)-endPos))
     intOut[endPos:] = gradInt
 
-    return intOut+1
+    return intOut + 1
 
 
 def stabilizeImages(fPath, endsWith='tif', SAVE=True, preProcess=False):
@@ -920,8 +920,8 @@ def stabilizeImages(fPath, endsWith='tif', SAVE=True, preProcess=False):
     img0 = 0
     fname0 = 0
     for fname in np.transpose(tifList):
-        k = k+1
-        img = cv.imread(fPath+fname, -1)
+        k = k + 1
+        img = cv.imread(fPath + fname, -1)
 
         if k > 1:
 
@@ -939,19 +939,19 @@ def stabilizeImages(fPath, endsWith='tif', SAVE=True, preProcess=False):
 
             maxLoc = (A == A.max()).nonzero()
 
-            deltaX = np.arange(-borderSize, borderSize+1)[maxLoc[0]][0]
-            deltaY = np.arange(-borderSize, borderSize+1)[maxLoc[1]][0]
+            deltaX = np.arange(-borderSize, borderSize + 1)[maxLoc[0]][0]
+            deltaY = np.arange(-borderSize, borderSize + 1)[maxLoc[1]][0]
 
             if abs(deltaX) != 0:
                 img = np.roll(img, int(deltaX), axis=0)
             if abs(deltaY) != 0:
                 img = np.roll(img, int(deltaY), axis=1)
             if SAVE:
-                cv.imwrite(fPath+fname0[:-10]+'-aligned.tif', img)
+                cv.imwrite(fPath + fname0[:-10] + '-aligned.tif', img)
             translationList = np.vstack((translationList,
                                         np.array((int(deltaX), int(deltaY)))))
         else:
-            borderSize = np.round(min(img.shape)/20.)-1
+            borderSize = np.round(min(img.shape)/20.) - 1
         img0 = img.copy()
         fname0 = fname.copy()
     return translationList
@@ -1000,10 +1000,10 @@ def trackCells(fPath, lnoise=1, lobject=8, boxSize=15,
     bwL = list(range(len(lims)))
     bwL0 = list(range(len(lims)))
     for fname in np.transpose(tifList):
-        print(fPath+fname)
-        k = k+1
+        print(fPath + fname)
+        k = k + 1
         progress(np.double(k)/np.double(kmax))
-        img0 = cv.imread(fPath+fname, -1)
+        img0 = cv.imread(fPath + fname, -1)
         if len(img0) == 0:
             img = img.copy()
         else:
@@ -1018,7 +1018,7 @@ def trackCells(fPath, lnoise=1, lobject=8, boxSize=15,
                                      sAmount, lnoise, lobject,
                                      boxSize, solidThres)
             bwL[id] = bwlabel(bwImg[id])
-            fileNum = k-1
+            fileNum = k - 1
             if bwL[id].max() > 5:
 
                 regionP[id] = regionprops(bwImg[id], scaleFact)
@@ -1040,7 +1040,7 @@ def trackCells(fPath, lnoise=1, lobject=8, boxSize=15,
                     masterList[id].append(regionP[id])
                 bwL0[id] = bwL[id].copy()
 
-        fileNum0 = fileNum+0
+        fileNum0 = fileNum + 0
     endProgress()
     return masterList, LL, AA
 
@@ -1067,7 +1067,7 @@ def linkTracks(masterL, LL):
     #Links the frame-to-frame tracks
 
     totalTime = len(LL)
-    ids = np.arange(len(LL[0]))+1
+    ids = np.arange(len(LL[0])) + 1
     masterL[0] = np.hstack((masterL[0], np.zeros((len(masterL[0]), 1))))
     masterL[0][(LL[0][:, 0]-1).tolist(), 8] = ids
     tr = updateTR(masterL, LL, 0)
@@ -1083,11 +1083,11 @@ def linkTracks(masterL, LL):
                                   np.zeros((len(masterL[t+1]), 1))])
         masterL[t+1][(LL[t][:, 1]-1).tolist(), 8] = ids
         tr0 = updateTR(masterL, LL, t+1)
-        tr0[:, 2] = t+1
+        tr0[:, 2] = t + 1
         ids = masterL[t+1][(LL[t+1][:, 0]-1).tolist(), 8]
         for i in range(len(ids)):
             if ids[i] == 0:
-                maxID = maxID+1
+                maxID = maxID + 1
                 ids[i] = maxID
                 tr0[i, 3] = maxID
         tr = np.vstack([tr, tr0])
@@ -1262,7 +1262,7 @@ def extendShortTracks(trIn, shortTrack=2):
         if (id <= tr[:, 3].max()):
             if len(trT[int(id)]):
                 trT[int(id)] = np.vstack((trT[int(id)], trT[int(id)][0]))
-                trT[int(id)][-2, 2] = trT[int(id)][-1, 2]-1
+                trT[int(id)][-2, 2] = trT[int(id)][-1, 2] - 1
 
     trS = revertListIntoArray(trT)
     return trS
@@ -1443,7 +1443,7 @@ def revertListIntoArray(listIn):
         elif len(listIn[id]) > 0:
             arrayOut[k] = np.vstack((arrayOut[k], listIn[id]))
         if np.mod(id, nID) == 0:
-            k = k+1
+            k = k + 1
     m = 0
     stop = False
     while not stop:
@@ -1509,7 +1509,7 @@ def findDivs(L):
         elif L[divs] < minSize:
             divTimes[i] = 0
 
-    divTimes = divLoc[0]+1.
+    divTimes = divLoc[0] + 1.
     divTimes[np.diff(divTimes) == 1] = 0
     divTimes = divTimes[divTimes != 0]
     divTimes = divTimes[divTimes > 3]
@@ -1659,27 +1659,27 @@ def splitTracks(trIn):
                 x[1] = pt[1].copy()
                 if x[1] < trI[id][-1, 2]:
                     if (pt[1] != divList[0][1]):
-                        trI[id][(trI[id][:, 2] == x[0]), 8] = k-1
-                        trI[id][(trI[id][:, 2] == x[0]), 9] = k-1
-                    trI[id][(trI[id][:, 2] == (x[1]-1)), 8] = k+1
+                        trI[id][(trI[id][:, 2] == x[0]), 8] = k - 1
+                        trI[id][(trI[id][:, 2] == x[0]), 9] = k - 1
+                    trI[id][(trI[id][:, 2] == (x[1]-1)), 8] = k + 1
                     trI[id][(trI[id][:, 2] >= x[0]) &
                             (trI[id][:, 2] < x[1]), 3] = k
-                    k = k+1
+                    k = k + 1
                     x[0] = x[1].copy()
 
             if sum(trI[id][:, 2] >= x[0]) > 1:
-                trI[id][(trI[id][:, 2] == x[0]), 8] = k-1
-                trI[id][(trI[id][:, 2] == x[0]), 9] = k-1
+                trI[id][(trI[id][:, 2] == x[0]), 8] = k - 1
+                trI[id][(trI[id][:, 2] == x[0]), 9] = k - 1
                 trI[id][trI[id][:, 2] >= x[0], 3] = k
             if len(trI[id][trI[id][:, 2] >= x[0], 3]) == 1:
                 trI[id][trI[id][:, 2] >= x[0], 3] = 0
 #               trI[id] = np.vstack((trI[id], trI[id][-1, :]))
 #               trI[id][-1, 2] = trI[id][-1, 2]+1
 #               trI[id][-1, 8:10] = 0
-            k = k+1
+            k = k + 1
         else:
             trI[id][:, 3] = k
-            k = k+1
+            k = k + 1
     trOut = revertListIntoArray(trI)
     trOut = trOut[trOut[:, 3] > 0, :]
 #   trOut = removeShortCells(trOut, 20)
@@ -1716,18 +1716,18 @@ def splitCells(trIn):
                         trI[i] = np.vstack((trI[i], trI[i][id, :]))
                         ellN = trI[i][id, 4]/4.
                         angN = trI[i][id, 6]*np.pi/180.
-                        yp = trI[i][id, 1]+ellN*np.cos(angN)
+                        yp = trI[i][id, 1] + ellN*np.cos(angN)
                         trI[i][id, 1] = yp
                         trI[i][id:endI, 4] = Lp[id:endI]
                         trI[i][id, 0] = trI[i][id, 0]-ellN*np.sin(angN)
                         trI[i][id:endI, 3] = freeID[0]
 
                         trI[i][-1, 3] = freeID[1]
-                        trI[i][-1, 0] = trI[i][-1, 0]+ellN*np.sin(angN)
+                        trI[i][-1, 0] = trI[i][-1, 0] + ellN*np.sin(angN)
                         trI[i][-1:, 1] = trI[i][-1:, 1]-ellN*np.cos(angN)
                         trI[i][-1, 4] = trI[i][id, 4]
 
-                        id0 = id+0.
+                        id0 = id + 0.
                 freeID = freeID[2:]
             jumpIDDown = ((L-Lp) < 0).nonzero()[0]
             if jumpIDDown.any():
@@ -1993,7 +1993,7 @@ def findFamilyID(trIn):
     startProgress('Finding and sorting the families:')
     while len(cellIdList) > 0:
         progress(1-np.double(len(cellIdList))/np.double(idMax))
-        famID = famID+1
+        famID = famID + 1
         unlabelledCell = cellIdList[0]
         famList = np.array([unlabelledCell])
         while not stop:
@@ -2070,7 +2070,7 @@ def matchFamilies(trIn):
             trI[int(md[1])] = np.vstack((trI[int(md[1])],
                                          trI[int(md[1])][-1, :]))
             trI[int(md[1])][-2, 8:10] = 0
-            trI[int(md[1])][-1, 2] = trI[int(md[1])][-1, 2]+1
+            trI[int(md[1])][-1, 2] = trI[int(md[1])][-1, 2] + 1
         trI[int(md[1])][trI[int(md[1])][:, 2] == (divTime), 8] = md[1]
         trI[int(md[1])][trI[int(md[1])][:, 2] == (divTime), 9] = md[1]
         trI[int(md[1])][trI[int(md[1])][:, 2] == (divTime-1), 8] = md[0]
@@ -2158,7 +2158,7 @@ def addCellAge(trIn):
                 divisionTime = trI[i][0, 2]
             tStart = trI[i][0, 2]-divisionTime-1
             trI[i][0, -1] = np.max((tStart, 0))
-            trI[i][1:, -1] = trI[i][0, -1]+np.cumsum(np.diff(trI[i][:, 2]))
+            trI[i][1:, -1] = trI[i][0, -1] + np.cumsum(np.diff(trI[i][:, 2]))
             if trI[i][0, -1] > 0:
                 trI[i] = np.vstack((-1*np.ones((tStart, trI[i].shape[1])),
                                    trI[i]))
@@ -2201,15 +2201,15 @@ def fillGap(tr, age=True):
         dt = trIn[k+1, 2]-trIn[k, 2]
         for i in range(int(dt-1)):
             dTemp = trIn[k, :].copy()
-            dTemp[2] = trIn[k, 2]+1
+            dTemp[2] = trIn[k, 2] + 1
             if age:
-                dTemp[11] = trIn[k, 11]+1
-            trIn = np.insert(trIn, k+1, dTemp, 0)
-            k = k+1
+                dTemp[11] = trIn[k, 11] + 1
+            trIn = np.insert(trIn, k + 1, dTemp, 0)
+            k = k + 1
         if (k+2) == len(trIn):
             stop = True
         else:
-            k = k+1
+            k = k + 1
 
     return trIn
 
@@ -2362,11 +2362,11 @@ def addPoleAge(trIn):
             trI[k] = np.hstack((trI[k], np.zeros((len(trI[k]), 2))))
 
             if poleAges[0] == poleAges[1]:
-                age1 = trI[k][:, 11]+poleAges[0]
-                age2 = trI[k][:, 11]+0
+                age1 = trI[k][:, 11] + poleAges[0]
+                age2 = trI[k][:, 11] + 0
             else:
-                age1 = trI[k][:, 11]+poleAges[0]
-                age2 = trI[k][:, 11]+poleAges[1]
+                age1 = trI[k][:, 11] + poleAges[0]
+                age2 = trI[k][:, 11] + poleAges[1]
             trI[k][:, -2] = age1
             trI[k][:, -1] = age2
             if trI[k][0, -1] == 0:
@@ -2502,7 +2502,7 @@ def optimizeParameters(fPath, num):
         boxSize0 = (raw_input(strIn) or boxSize0)
         print 'Please examine the processed image,  close it when done'
         img = cv.imread(fPath+tifList[num], -1)
-        print fPath+tifList[num]
+        print fPath + tifList[num]
         img = cv.transpose(img)
         bwImg = processImage(img, scaleFact=1, sBlur=0.5, sAmount=0,
                              lnoise=lnoise0, lobject=lobject0,
@@ -2592,7 +2592,7 @@ def loadListOfArrays(fname):
     '''
     arrayInObj = np.load(fname)
     arrayIn = arrayInObj['arr_0']
-    listLength = np.max(arrayIn[:, 0])+1
+    listLength = np.max(arrayIn[:, 0]) + 1
 
     listOut = []
 
