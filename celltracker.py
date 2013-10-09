@@ -2341,7 +2341,7 @@ def _addPoleAge(trIn):
                 trI[k][:, -1] = age1
     trOut = revertListIntoArray(trI)
 
-    trOut[:, -2] = trOut[:, -1]
+    trOut[:, -2] = trOut[:, -1].copy()
     _endProgress()
 
     trOut = _addPoleID(trOut[:, :-1])
@@ -2387,13 +2387,12 @@ def _addPoleID(trIn):
                     trI[int(dID)][:, -1] = pID
                 trI[i][:, -1] = pID
             except:
-                pass
+                trI[i][:, -1] = pID
 
     trOut = revertListIntoArray(trI)
     _endProgress()
     trT = trOut[:, [0, 1, 2, 3, 13, 4, 5, 6, 7, 8, 9, 10, 11, 12]]
     trOut[:, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]] = trT
-
     trOut = trOut[trOut[:, 2].argsort(-1, 'mergesort'), ]
     trOut = trOut[trOut[:, 4].argsort(-1, 'mergesort'), ]
 
