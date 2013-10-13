@@ -16,7 +16,6 @@ import time as time
 import sys as sys
 import hungarian as hun
 import Polygon as pg
-
 #Progress bar, from http://stackoverflow.com/a/6169274
 
 
@@ -52,6 +51,13 @@ def _unique_rows(arrayIn):
     a = arrayIn.copy()
     unique_a = np.unique(a.view([('', a.dtype)]*a.shape[1]))
     return unique_a.view(a.dtype).reshape((unique_a.shape[0], a.shape[1]))
+
+
+def _intersect_rows(b, a):
+    """ Find the rows common to both arrays """
+    av = a.view([('', a.dtype)] * a.shape[1]).ravel()
+    bv = b.view([('', b.dtype)] * b.shape[1]).ravel()
+    return np.intersect1d(av, bv).view(a.dtype).reshape(-1, a.shape[1])
 
 
 def smooth(x, windowLength=3, stype='boxcar'):
@@ -1952,6 +1958,7 @@ def findFamilyID(trIn):
     Label the cells that are member of the same family with their
     family ID in the 10th column.
     """
+    sys.setrecursionlimit(int(trIn[:, 3].max()+1))
     trIn = np.hstack([trIn, np.zeros((len(trIn), 1))])
     trI = splitIntoList(trIn.copy(), 3)
     cellIdList = np.unique(trIn[trIn[:, -1] == 0, 3])
@@ -1963,16 +1970,7 @@ def findFamilyID(trIn):
         _progress(1-np.double(len(cellIdList))/np.double(idMax))
         famID += 1
         unlabelledCell = cellIdList[0]
-        famList = np.array([unlabelledCell])
-        while not stop:
-            famList1 = famList.copy()
-            for i in famList:
-                if len(trI[int(i)]) > 1:
-                    famList0 = np.unique(trI[int(i)][-1, 8:10])
-                    famList = np.unique(np.hstack([famList,
-                                                   famList0]))
-            if np.array_equal(famList, famList1):
-                stop = True
+        famList = findDescendants(trI, unlabelledCell)
         famList = famList[famList > 0]
         for i in famList:
             trI[int(i)][:, -1] = famID
@@ -2244,7 +2242,44 @@ def extractLineage(trI, i, dim=8):
             t = 0
     if lin.ndim > 1:
         lin = np.flipud(lin)
-    return lin
+    return lin.astype('int')
+
+
+def findDescendants(trI, i, dim=8):
+    """
+    Find all the descendants of a cell i. 
+    """
+
+
+    famList = np.array((i))
+    if i:
+        famList = np.hstack((famList, 
+                             findDescendants(trI, trI[int(i)][-1, dim], dim)))
+        famList = np.hstack((famList, 
+                             findDescendants(trI, trI[int(i)][-1, dim+1], dim)))
+
+    return famList
+
+
+def findCommonAncestor(trI, i1, i2, dim=8):
+    """
+    Finds the property of the common ancestor of cell i1 and i2
+    """
+    try:
+        trI = splitIntoList(trI, 3)
+    except:
+        pass
+
+    lin1 = extractLineage(trI, i1, dim)
+    lin2 = extractLineage(trI, i2, dim)
+
+    clin = _intersect_rows(lin1, lin2)
+
+    clin = clin[clin[:, 1].argsort(-1, 'mergesort'), ]
+
+    commonAncestor = clin[-1, :]
+
+    return trI[commonAncestor[0]][-1]
 
 
 def findPoleAge(trIn, i, t):
