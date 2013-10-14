@@ -1963,7 +1963,6 @@ def findFamilyID(trIn):
     trI = splitIntoList(trIn.copy(), 3)
     cellIdList = np.unique(trIn[trIn[:, -1] == 0, 3])
     famID = 0
-    stop = False
     idMax = len(cellIdList)
     _startProgress('Finding and sorting the families:')
     while len(cellIdList) > 0:
@@ -1976,7 +1975,6 @@ def findFamilyID(trIn):
             trI[int(i)][:, -1] = famID
         cellIdList = np.setdiff1d(cellIdList, famList)
 
-        stop = False
     trLong = revertListIntoArray(trI)
     _endProgress()
     return trLong
@@ -2225,7 +2223,7 @@ def extractLineage(trI, i, dim=8):
         trI = splitIntoList(trI, 3)
     except:
         pass
-
+    i = int(i)
     t = trI[i][0, 2]
     lin = np.array((i, t))
     while t > 0:
@@ -2247,17 +2245,35 @@ def extractLineage(trI, i, dim=8):
 
 def findDescendants(trI, i, dim=8):
     """
-    Find all the descendants of a cell i. 
+    Find all the descendants of a cell i.
     """
-
-
     famList = np.array((i))
     if i:
-        famList = np.hstack((famList, 
-                             findDescendants(trI, trI[int(i)][-1, dim], dim)))
-        famList = np.hstack((famList, 
-                             findDescendants(trI, trI[int(i)][-1, dim+1], dim)))
+        famList = np.hstack((famList,
+                             findDescendants(trI,
+                                             trI[int(i)][-1, dim], dim)))
+        famList = np.hstack((famList,
+                             findDescendants(trI,
+                                             trI[int(i)][-1, dim+1], dim)))
+    return famList
 
+
+def getDescendantsNewick(trI, i, dim=8):
+    """
+    Generate a list of descendants in the Newick format.
+    """
+    famList = "("+str(int(i))+":"+str(trI[int(i)][-1, 12])
+#    famList = ")"+str(int(i))+":"+str(trI[int(i)][-1, 12])
+    if i:
+        daughters = trI[int(i)][-1, dim:(dim+2)]
+        if daughters[0] != 0:
+            famList = famList+", "+getDescendantsNewick(trI,
+                                                        trI[int(i)][-1, dim],
+                                                        dim)+")"
+        if (daughters[0] != daughters[1]):
+            famList = getDescendantsNewick(trI,
+                                           trI[int(i)][-1, dim+1],
+                                           dim)+", "+famList+")"
     return famList
 
 
@@ -2265,13 +2281,9 @@ def findCommonAncestor(trI, i1, i2, dim=8):
     """
     Finds the property of the common ancestor of cell i1 and i2
     """
-    try:
-        trI = splitIntoList(trI, 3)
-    except:
-        pass
 
-    lin1 = extractLineage(trI, i1, dim)
-    lin2 = extractLineage(trI, i2, dim)
+    lin1 = extractLineage(trI, int(i1), dim)
+    lin2 = extractLineage(trI, int(i2), dim)
 
     clin = _intersect_rows(lin1, lin2)
 
@@ -2280,6 +2292,61 @@ def findCommonAncestor(trI, i1, i2, dim=8):
     commonAncestor = clin[-1, :]
 
     return trI[commonAncestor[0]][-1]
+
+
+def findEarliestAncestor(ids, trI, dim=8):
+    """
+    Finds the earliest ancestor(s) of a population at time t.
+    """
+    linList = [extractLineage(trI, ids[0], dim)]
+    for i in ids[1:]:
+        linList.append(extractLineage(trI, i, dim))
+
+    eA = [linList[0]]
+    for i in range(1, len(ids)):
+        for j in range(len(eA)):
+            eAnc = _intersect_rows(eA[j], linList[i])
+            if len(eAnc):
+                eA[j] = eAnc
+    for i in range(len(eA)):
+        eA[i] = eA[i][eA[i][:, 1].argsort(-1, 'mergesort'), ]
+
+    return eA[0][-1]
+
+
+def orderByDescendants(ids, trI, dim=8):
+    """
+    Orders the inputted ids in decreasing order of reproductive potential
+    """
+    desArray = ((0, 0))
+    for i in ids.astype('int'):
+        des = findDescendants(trI, i, dim)
+        desArray = np.vstack((desArray, (i, len(des))))
+    desArray = desArray[1:]
+    desArray = desArray[desArray[:, 1].argsort(-1, 'mergesort'), ]
+    desArray = np.flipud(desArray)
+
+    return desArray[:, 0]
+
+
+def timeToFixation(trIn, t, dim=8):
+    """
+    Computes the time it takes a population to fix starting at time t.
+    Returns the fixation time and the id that fixes.
+    """
+    trF = findFamilyID(trIn[trIn[:, 2] >= t, :].take([0, 1, 2, 3, 5, 6,
+                                                      7, 8, 9, 10], axis=1))
+
+    trT = splitIntoList(trF, 2)
+    tt = t
+    while len(np.unique(trT[tt][:, 10])) != 1:
+        tt += 1
+        if tt == trIn[:, 2].max():
+            return ((0, 0))
+    minT = int(trF[trF[:, 10] == trT[tt][0, 10], 2].min())
+    idFix = trT[minT][trT[minT][:, 10] == trT[tt][0, 10], 3]
+
+    return np.array((tt, idFix))
 
 
 def findPoleAge(trIn, i, t):
