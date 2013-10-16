@@ -672,8 +672,8 @@ def putLabelOnImg(fPath, tr, dataRange, dim, num):
 #       plt.clim((0, 30))
         plt.title(str(t))
         plt.hold(False)
-        plt.xlim((0, 1250))
-        plt.ylim((25, 220))
+        plt.xlim((600, 1250))
+        plt.ylim((400, 600))
 
 #       cv.imwrite(fPath+'Fig'+str(t)+'.jpg', np.uint8(bwI))
 #       plt.savefig(fPath+"Fig"+str(t)+".png", dpi = (120))
@@ -720,7 +720,7 @@ def processImage(imgIn, scaleFact=1, sBlur=0.5, sAmount=0, lnoise=1,
     bwImg = _segmentCells(bwImg > 0)
     bwImg = _fragmentCells(bwImg > 0, regionprops(bwImg)[:, 6], solidThres)
     bwImg = removeSmallBlobs(bwImg, 50)
-    bwImg = dilateConnected(bwImg, 2)
+    bwImg = dilateConnected(bwImg, 1)
     return bwImg
 
 
@@ -1440,16 +1440,15 @@ def _findDivisionEvents(trIn):
         if np.size(tr) > 1:
             if len(tr) > 10:
                 tr0 = tr.copy()
-                tr0[(np.diff(tr0[:, 2]) == 0), :] = 0
-                tr0 = tr0[tr0[:, 0] > 0, :]
+                tr0 = tr0[tr0[:, 2].argsort(-1, 'mergesort'), ]
                 divEvents = findDivs(tr0[:, 4])
                 if divEvents.any():
-                    divTimes = tr[divEvents.tolist(), 2]
+                    divTimes = tr0[divEvents.tolist(), 2]
                     divT = np.vstack([divTimes*0 + tr[0, 3],
                                       divTimes])
                     divE = np.append(divE, divT.transpose(), 0)
     divE = divE[1:len(divE), :]
-    return divE
+    return divE.astype('int')
 
 
 def findDivs(L):
@@ -1458,8 +1457,8 @@ def findDivs(L):
     L is the length of the cell
     """
     divTimes = np.array([])
-    divJumpSize = 15
-    minSize = 30
+    divJumpSize = 20
+    minSize = 40
         #Remove the points with a large positive derivative,  do this twice
     L = removePeaks(L.copy(), 'Down')
     #L = removePlateau(L.copy())
@@ -1476,9 +1475,10 @@ def findDivs(L):
             divTimes[i] = 0
 
     divTimes = divLoc[0] + 1.
-    divTimes[np.diff(divTimes) == 1] = 0
+    divTimes = divTimes[np.diff(divTimes) >= 3]
     divTimes = divTimes[divTimes != 0]
     divTimes = divTimes[divTimes > 3]
+    divTimes = divTimes[divTimes < (len(L)-3)]
     return divTimes.astype('int')
 
 
@@ -1974,7 +1974,6 @@ def findFamilyID(trIn):
         for i in famList:
             trI[int(i)][:, -1] = famID
         cellIdList = np.setdiff1d(cellIdList, famList)
-
     trLong = revertListIntoArray(trI)
     _endProgress()
     return trLong
@@ -2262,18 +2261,20 @@ def getDescendantsNewick(trI, i, dim=8):
     """
     Generate a list of descendants in the Newick format.
     """
-    famList = "("+str(int(i))+":"+str(trI[int(i)][-1, 12])
-#    famList = ")"+str(int(i))+":"+str(trI[int(i)][-1, 12])
+    famList0 = ")"+str(int(i))+":"+str(trI[int(i)][-1, 12])
     if i:
         daughters = trI[int(i)][-1, dim:(dim+2)]
         if daughters[0] != 0:
-            famList = famList+", "+getDescendantsNewick(trI,
-                                                        trI[int(i)][-1, dim],
-                                                        dim)+")"
-        if (daughters[0] != daughters[1]):
-            famList = getDescendantsNewick(trI,
-                                           trI[int(i)][-1, dim+1],
-                                           dim)+", "+famList+")"
+            famList = "("+getDescendantsNewick(trI, trI[int(i)][-1, dim], dim)
+            if (daughters[0] != daughters[1]):
+                famList = famList+", "+getDescendantsNewick(trI,
+                                                            trI[int(i)][-1,
+                                                                        dim+1],
+                                                            dim)+famList0
+            else:
+                famList = famList+famList0
+        else:
+            famList = str(i)+":"+str(trI[int(i)][-1, 12])
     return famList
 
 
@@ -2603,10 +2604,6 @@ def _splitRegions(fPath, numberOfRegions):
     Performs a kmeans analysis to identify each regions.
     """
     import random as rnd
-    import scipy.cluster.vq as vq
-    lnoise0 = 1
-    lobject0 = 8
-    boxSize0 = 15
     tifList = []
     fileList = _sort_nicely(os.listdir(fPath))
     for f in fileList:
@@ -2616,19 +2613,11 @@ def _splitRegions(fPath, numberOfRegions):
     print num
     img = cv.imread(fPath+tifList[num], -1)
     img = cv.transpose(img)
-    bwImg = processImage(img, scaleFact=1, sBlur=0, sAmount=0,
-                         lnoise=lnoise0, lobject=lobject0,
-                         boxSize=np.double(boxSize0), solidThres=0.65)
-    posList = regionprops(bwImg)[:, 0:2]
-    wPosList = vq.whiten(posList)
 
-    idList = vq.kmeans2(wPosList[:, 1], numberOfRegions)
-    idList = vq.kmeans2(wPosList[:, 1], numberOfRegions)
-    x = np.zeros((numberOfRegions, ))
-    for i in range(numberOfRegions):
-        x[i] = np.mean(posList[idList[1] == i, 1])
+    imgInt = img.mean(1)
 
-    x = np.sort(x)
+    x, _ = peakdet(smooth(imgInt, 51), 200)
+    x = x[:, 0]
     xLimits = np.array([x[0]/2, (x[0]+x[1])/2])
     for i in range(1, numberOfRegions-1, 1):
         xLimits = np.vstack((xLimits, np.array([(x[i-1]+x[i])/2,
@@ -2767,12 +2756,12 @@ if __name__ == "__main__":
             tr = linkTracks(masterL, LL)
             if PROCESSTRACKS == 'yes':
                 tr = processTracks(tr, match=MATCHF)
-            with open(SAVEPATH+'/trData_'+str(i)+'.dat',  'wb') as f:
-                f.write(("# xPos yPos time cellID PoleID cellLength"
-                         " cellWidth cellAngle avgIntensity"
-                         " divisionEventsLeft divisionEventsRight"
-                         " familyID cellAge OldestPoleAge"
-                         " elongationRate\n"))
-                np.savetxt(f, tr)
+                with open(SAVEPATH+'/trLabel.dat',  'wb') as f:
+                    f.write(("# xPos yPos time cellID PoleID cellLength"
+                             " cellWidth cellAngle avgIntensity"
+                             " divisionEventsLeft divisionEventsRight"
+                             " familyID cellAge OldestPoleAge"
+                             " elongationRate\n"))
+                np.save('trP_'+str(i), tr)
             print ("The analysis of region '+str(i)+' is complete."
                    " Data saved as "+SAVEPATH+"trData_"+str(i)+".dat")
