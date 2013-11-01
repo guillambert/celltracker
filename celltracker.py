@@ -157,7 +157,8 @@ def unsharp(img, sigma=5, amount=10):
         img = np.double(img)
         #imgB=cv.GaussianBlur(img, (img.shape[0]-1, img.shape[1]-1), sigma)
         imgB = cv.GaussianBlur(img, (img.shape[0]-(img.shape[0]+1) % 2,
-                               img.shape[1]-(img.shape[1]+1) % 2), sigma)
+                               img.shape[1]-(img.shape[1]+1) % 2),
+                               np.double(sigma))
         imgS = img*(1 + amount) + imgB*(-amount)
         if amount:
             return imgS
@@ -701,8 +702,8 @@ def putLabelOnImg(fPath, tr, dataRange, dim, num):
         plt.clf()
 
 
-def processImage(imgIn, scaleFact=1, sBlur=0.5, sAmount=0, lnoise=1,
-                 lobject=8, boxSize=15, solidThres=0.85):
+def processImage(imgIn, scaleFact=1, sBlur=0.5, sAmount=0, lnoise=0.75,
+                 lobject=7, boxSize=15, solidThres=0.85):
     """
     This is the core of the image analysis part of the tracking algorithm.
     bwImg = processImage(imgIn, scaleFact = 1, sBlur = 0.5, sAmount = 0,
@@ -1039,7 +1040,7 @@ def stabilizeImages(fPath, endsWith='tif', SAVE=True, preProcess=False,
     return translationList
 
 
-def trackCells(fPath, lnoise=1, lobject=8, boxSize=15,
+def trackCells(fPath, lnoise=0.75, lobject=7, boxSize=15,
                lims=np.array([[0, -1]]), maxFiles=0, tList=0):
     """
     This prepares the data necessary to track the cells.
@@ -1201,7 +1202,7 @@ def processTracks(trIn, match=True):
     tr = rematchTracks(tr, 1)
 
     # "Bridging track gaps"
-    tr = _joinTracks(tr, 2.5, [2, 4])
+    tr = _joinTracks(tr, 1.5, [2, 4])
 
     # "Splitting Tracks"
     tr = _fixGaps(tr)
@@ -1280,6 +1281,8 @@ def _fixTracks(tr, dist, timeRange):
     listOfMatches = matchTracksOverlap(masterEndList, masterStartList,
                                        dist, timeRange)
 
+    listOfMatches = listOfMatches[listOfMatches[:, 0] !=
+                                  listOfMatches[:, 1], :]
     return listOfMatches
     #Reassign the track IDs
 
@@ -1384,7 +1387,6 @@ def matchTracksOverlap(inList1, inList2, dist, timeRange, orient=True):
         if areaList.sum() == 0:
             areaList = np.zeros((1, 3))
         matchList = np.vstack((matchList, areaList))
-#   matchList = matchList[matchList[:, 0] != matchList[:, 1], :]
     matchList = matchList[matchList[:, 2] > 0, :]
     _endProgress()
     return matchList
@@ -1404,12 +1406,12 @@ def matchTracksDist(inList1, inList2, timeRange):
                           (inList2[:, 2] > (pts[2]-timeRange[0])), :]
         centerPt = nearPts[:, 0:2]
         distMat = cdist([pts[0:2]], centerPt)
-        matchID = (distMat == distMat.min()).nonzero()[1]
-        if len(matchID) > 1:
-            matchID = matchID[0]
-        matchList = np.vstack((matchList, np.array((pts[3],
-                                                    nearPts[matchID, 3],
-                                                    distMat.min()))))
+        matchID = (distMat <= 1.5*distMat.min()).nonzero()[1]
+        areaList = distMat[0][matchID]
+        mL = np.transpose(np.vstack((matchID*0 + pts[3],
+                                     nearPts[matchID, 3],
+                                     areaList)))
+        matchList = np.vstack((matchList, mL))
     matchList = matchList[matchList[:, 2] > 0, :]
     _endProgress()
     return matchList
@@ -1488,7 +1490,7 @@ def _findDivisionEvents(trIn):
     divE = np.zeros((1, 2))
     for tr in trT:
         if np.size(tr) > 1:
-            if len(tr) > 10:
+            if len(tr) > 7:
                 tr0 = tr.copy()
                 tr0 = tr0[tr0[:, 2].argsort(-1, 'mergesort'), ]
                 divEvents = findDivs(tr0[:, 4])
@@ -1508,14 +1510,17 @@ def findDivs(L):
     """
     divTimes = np.array([])
     divJumpSize = 0.3
+    divJumpSizeAbs = 25
         #Remove the points with a large positive derivative,  do this twice
     L = removePeaks(L.copy(), 'Down')
     #L = removePlateau(L.copy())
     #Find the general location of a division event.
     divLoc = (np.diff(np.log(np.abs(L))) < -divJumpSize).nonzero()
-    divTimes = divLoc[0] + 1.
+    divLocAbs = (np.diff((np.abs(L))) < -divJumpSizeAbs).nonzero()
+    divLocAbs = np.intersect1d(divLocAbs[0], L[L > 100].nonzero()[0])
+    divTimes = np.unique(np.hstack((divLoc[0] + 1., divLocAbs + 1.)))
     if len(divTimes) > 1:
-        divTimes = divTimes[np.diff(divTimes) >= 3]
+        divTimes[np.diff(divTimes) < 3] = 0
         divTimes = divTimes[divTimes != 0]
     divTimes = divTimes[divTimes > 3]
     divTimes = divTimes[divTimes < (len(L)-3)]
@@ -1691,7 +1696,7 @@ def _splitTracks(trIn):
             k += 1
     trOut = revertListIntoArray(trI)
     trOut = trOut[trOut[:, 3] > 0, :]
-#   trOut = removeShortCells(trOut, 20)
+#    trOut = removeShortCells(trOut, 20)
     _endProgress()
     trOut = extendShortTracks(trOut, 1)
     return trOut
@@ -1744,11 +1749,10 @@ def _splitCells(trIn, typ):
                 for j in jumpIDDown:
                     if (j > 3) & (j < (len(L)-3)):
                         trI[i][j, 4] = Lp[j]
+    _endProgress()
     trOut = revertListIntoArray(trI)
 
     trOut = extendShortTracks(trOut, 1)
-
-    _endProgress()
 
     trOut = trOut[trOut[:, 2].argsort(-1, 'mergesort'), ]
     trOut = trOut[trOut[:, 3].argsort(-1, 'mergesort'), ]
@@ -1768,19 +1772,21 @@ def rematchTracks(trIn, dist):
     newMatchList = range(len(inList))
     newMasterL = range(len(inList))
     for k in range(len(inList)):
-        newMasterL[k] = np.zeros((inList[k][:, 3].max(), 9))
+        newMasterL[k] = np.zeros((len(inList[k][:, 3]), 8))
+        inList[k][:, 3] = np.arange(len(inList[k]))+1
         for dt in inList[k]:
-            cellID = dt[3].astype('int')
-            newMasterL[k][cellID-1, :] = dt[[0, 1, 4, 5, 6, 5, 6, 7, 3]]
+            newMasterL[k][int(dt[3])-1, :] = dt[[0, 1, 4, 5, 6, 5, 6, 7]]
     _startProgress('Rematching tracks:')
     for k in range(len(inList)-1):
         _progress(np.double(k)/np.double(len(inList)))
         trCurrent = trNext.copy()
         trNext = inList[k+1]
         matchList = distContours(trCurrent, trNext, dist)
-        newMatchList[k] = matchIndices(matchList, 'Area')
+        mList = matchIndices(matchList, 'Area')
+        newMatchList[k] = mList.copy()
     _endProgress()
     trOut = linkTracks(newMasterL, newMatchList[:-1])
+    trOut = extendShortTracks(trOut, 1)
     return trOut
 
 
@@ -1798,7 +1804,7 @@ def _findDaughters(trIn, merge=False):
     else:
         divData0 = np.zeros((1, 3))
     tr0 = tr.copy()
-    mList0 = _fixTracks(tr0, 2.5, [2, 4])
+    mList0 = _fixTracks(tr0, 1, [4, 4])
     #if np.sum(mList0[:, 3] < meanL):
 #       mList1 = mList0[mList0[:, 3] < meanL, :]
 #   else:
@@ -2071,6 +2077,7 @@ def _matchFamilies(trIn, trLength=11, dim=8):
             if len(tt):
                 if len(tt[:, 0]) > 10:
                     tt = tt[tt[:, 2].argsort(-1, 'mergesort'), ]
+                    tt = tt[tt[:,8]==0, :]
                     famStart = np.vstack((famStart, tt[0]))
         initialIDs = np.unique(trOut[trOut[:, 2] < 25, dim+2])
         for i in initialIDs:
@@ -2080,13 +2087,13 @@ def _matchFamilies(trIn, trLength=11, dim=8):
 
         for i in range(len(trI2)):
             if len(trI2[i]) > trLength:
-                trI2[i] = trI2[i][int(trLength/2.-1/2.):-int(5), :].copy()
+                trI2[i] = trI2[i][int(trLength/2.-1/2.):-int(trLength/2.-1/2.),
+                                  :].copy()
             else:
                 trI2[i] = []
 
         trC = revertListIntoArray(trI2)
-#   listOfMatches = matchTracksOverlap(famStart.copy(), trC.copy(), 5, [5, -1])
-        listOfMatches = matchTracksDist(famStart.copy(), trC.copy(), [5, -1])
+        listOfMatches = matchTracksDist(famStart.copy(), trC.copy(), [1, 1])
         if len(listOfMatches):
             matchData = matchIndices(listOfMatches, 'Distance')
         else:
@@ -2107,7 +2114,6 @@ def _matchFamilies(trIn, trLength=11, dim=8):
             trI[int(md[1])][trI[int(md[1])][:, 2] == (divTime-1), dim] = md[0]
             trI[int(md[1])][trI[int(md[1])][:, 2] == (divTime-1),
                             9] = freeID[0]
-
             daughterID1 = trI[int(md[1])][-1, dim]
             daughterID2 = trI[int(md[1])][-1, dim+1]
             if (daughterID1 > 0) & (daughterID1 <= len(trI)):
@@ -2116,7 +2122,6 @@ def _matchFamilies(trIn, trLength=11, dim=8):
             if (daughterID2 > 0) & (daughterID2 <= len(trI)):
                 if len(trI[int(daughterID2)]):
                     trI[int(daughterID2)][0, dim:(dim+2)] = freeID[0]
-
             freeID = freeID[1:].copy()
 
         trOut = revertListIntoArray(trI)
@@ -2155,6 +2160,7 @@ def _matchFamilies(trIn, trLength=11, dim=8):
                     tt = tt[tt[:, 2].argsort(-1, 'mergesort'), ]
                     famStart = np.vstack((famStart, tt[0]))
         maxF = famStart[:, 2].max()
+        print maxF
     return trOut
 
 
@@ -2255,7 +2261,7 @@ def _fillGap(tr, age=True):
     return trIn
 
 
-def addElongationRate(trIn):
+def addElongationRate(trIn, lenDim=5, divDim=9):
     """
     Fits an exponential to the length between every divisions to find the
     elongation rate.
@@ -2265,10 +2271,11 @@ def addElongationRate(trIn):
 
     for i in np.unique(trIn[:, 3]):
         dT = trI[int(i)].copy()
-        if len(dT) > 10:
-            if not len(findDivs(dT[:, 5])):
+        if (len(dT) > 10) & (dT[-1, divDim] != 0):
+            if not len(findDivs(dT[:, lenDim])):
                 dT = dT[3:-3, :]
-                z = np.polyfit(range(len(dT)),  np.log(np.abs(dT[:, 5])),  1)
+                z = np.polyfit(range(len(dT)),
+                               np.log(np.abs(dT[:, lenDim])),  1)
                 dT[:, -1] = z[0]
                 trI[int(i)][:, -1] = z[0]
     trOut = revertListIntoArray(trI)
@@ -2649,9 +2656,9 @@ def optimizeParameters(fPath, num):
     Tests the processing parameters on a test file
     """
     import random as rnd
-    lnoise0 = 2
-    lobject0 = 8
-    boxSize0 = 25
+    lnoise0 = 0.75
+    lobject0 = 7
+    boxSize0 = 15
     tifList = []
     fileList = _sort_nicely(os.listdir(fPath))
     for f in fileList:
@@ -2714,19 +2721,42 @@ def _splitRegions(fPath, numberOfRegions):
             tifList.append(f)
     num = rnd.randint(1, int(len(tifList)))
     print num
-    img = cv.imread(fPath+tifList[num], -1)
-    img = cv.transpose(img)
+    stop = False
+    manual = False
+    while not stop:
+        img = cv.imread(fPath+tifList[num], -1)
+        img = cv.transpose(img)
 
-    imgInt = img.mean(1)
+        imgInt = img.mean(1)
+        if manual == 'yes':
+            x = np.zeros((numberOfRegions+1, ))
+            for i in range(numberOfRegions+1):
+                x[i] = np.double(raw_input(("Enter limit #"+str(i)+": ")))
+        else:
+            _, x = peakdet(smooth(imgInt, 11), 100)
+            x = x[:, 0]
+            if len(x) == (numberOfRegions - 1):
+                x = np.hstack((1, x, 990))
+            elif len(x) == (numberOfRegions - 2):
+                x = np.hstack((1, 1, x, 990))
+        xLimits = np.array([x[0], x[1]])
+        for i in range(1, numberOfRegions-1, 1):
+            xLimits = np.vstack((xLimits, np.array([(x[i]), x[i+1]])))
+        xLimits = np.vstack((xLimits, np.array([(x[i+1]), x[-1]])))
 
-    _, x = peakdet(smooth(imgInt, 11), 100)
-    x = x[:, 0]
-    if len(x) == (numberOfRegions - 1):
-        x = np.hstack((1, x, 990))
-    xLimits = np.array([x[0], x[1]])
-    for i in range(1, numberOfRegions-1, 1):
-        xLimits = np.vstack((xLimits, np.array([(x[i]), x[i+1]])))
-    xLimits = np.vstack((xLimits, np.array([(x[i+1]), x[-1]])))
+        plt.imshow(img)
+        for i in range(len(x)):
+            plt.plot([0, 1000], [x[i], x[i]], 'r')
+        plt.plot(imgInt, np.arange(len(imgInt)))
+        plt.show()
+        satisfiedYN = raw_input(("Are you satisfied with the "
+                                 "partition? (yes or no) "))
+        if satisfiedYN == 'yes':
+            stop = True
+        elif satisfiedYN == 'no':
+            manual = raw_input(("Do you want to manually enter the "
+                                "chamber limits? (yes or no) "))
+
     return xLimits.astype('int')
 
 
@@ -2782,7 +2812,7 @@ if __name__ == "__main__":
         elif var == '--no-interaction':
             INTERACTIVE = False
 
-    lnoise, lobject, boxSize = 2, 8, 25
+    lnoise, lobject, boxSize = 0.75, 7, 15
 
     if INTERACTIVE:
         FILEPATH = (raw_input(("Please enter the folder you want to analyze"
@@ -2853,8 +2883,8 @@ if __name__ == "__main__":
 
     if LINKTRACKS == 'yes':
         for i in range(NUMBEROFREGIONS):
-            masterL = loadListOfArrays(SAVEPATH+'masterL_0.npz')
-            LL = loadListOfArrays(SAVEPATH+'LL_0.npz')
+            masterL = loadListOfArrays(SAVEPATH+'masterL_'+str(i)+'.npz')
+            LL = loadListOfArrays(SAVEPATH+'LL_'+str(i)+'.npz')
             tr = linkTracks(masterL, LL)
             if PROCESSTRACKS == 'yes':
                 tr = processTracks(tr, match=MATCHF)
