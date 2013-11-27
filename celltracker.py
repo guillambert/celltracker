@@ -1032,7 +1032,6 @@ def stabilizeImages(fPath, endsWith='tif', SAVE=True, preProcess=False,
                 cv.imwrite(fPath + fname0[:-10] + '-aligned.tif', img)
             translationList = np.vstack((translationList,
                                         np.array((int(deltaX), int(deltaY)))))
-            print fname, deltaX, deltaY
         else:
             borderSize = np.round(min(img.shape)/10.) - 1
         img0 = img.copy()
@@ -1511,14 +1510,17 @@ def findDivs(L):
     divTimes = np.array([])
     divJumpSize = 0.3
     divJumpSizeAbs = 25
+    Lmin = 40
+    Lt = 100
         #Remove the points with a large positive derivative,  do this twice
     L = removePeaks(L.copy(), 'Down')
     #L = removePlateau(L.copy())
     #Find the general location of a division event.
     divLoc = (np.diff(np.log(np.abs(L))) < -divJumpSize).nonzero()
+    divLoc = np.intersect1d(divLoc[0], L[L > Lmin].nonzero()[0])
     divLocAbs = (np.diff((np.abs(L))) < -divJumpSizeAbs).nonzero()
-    divLocAbs = np.intersect1d(divLocAbs[0], L[L > 100].nonzero()[0])
-    divTimes = np.unique(np.hstack((divLoc[0] + 1., divLocAbs + 1.)))
+    divLocAbs = np.intersect1d(divLocAbs[0], L[L > Lt].nonzero()[0])
+    divTimes = np.unique(np.hstack((divLoc + 1., divLocAbs + 1.)))
     if len(divTimes) > 1:
         divTimes[np.diff(divTimes) < 3] = 0
         divTimes = divTimes[divTimes != 0]
@@ -2077,7 +2079,7 @@ def _matchFamilies(trIn, trLength=11, dim=8):
             if len(tt):
                 if len(tt[:, 0]) > 10:
                     tt = tt[tt[:, 2].argsort(-1, 'mergesort'), ]
-                    tt = tt[tt[:,8]==0, :]
+                    tt = tt[tt[:, 8] == 0, :]
                     famStart = np.vstack((famStart, tt[0]))
         initialIDs = np.unique(trOut[trOut[:, 2] < 25, dim+2])
         for i in initialIDs:
@@ -2093,37 +2095,46 @@ def _matchFamilies(trIn, trLength=11, dim=8):
                 trI2[i] = []
 
         trC = revertListIntoArray(trI2)
-        listOfMatches = matchTracksDist(famStart.copy(), trC.copy(), [1, 1])
-        if len(listOfMatches):
-            matchData = matchIndices(listOfMatches, 'Distance')
-        else:
-            matchData = []
-        for md in matchData:
-            trI[int(md[0])][0, dim:(dim+2)] = md[1]
-            divTime = trI[int(md[0])][0, 2]
-            if len(trI[int(md[1])][trI[int(md[1])][:, 2] < divTime, 3]) == 0:
-                divTime += 2
-            trI[int(md[1])][trI[int(md[1])][:, 2] >= divTime, 3] = freeID[0]
-            if len(trI[int(md[1])][trI[int(md[1])][:, 2] >= divTime, 3]) == 1:
-                trI[int(md[1])] = np.vstack((trI[int(md[1])],
-                                             trI[int(md[1])][-1, :]))
-                trI[int(md[1])][-2, dim:(dim+2)] = 0
-                trI[int(md[1])][-1, 2] = trI[int(md[1])][-1, 2] + 1
-            trI[int(md[1])][trI[int(md[1])][:, 2] == (divTime), dim] = md[1]
-            trI[int(md[1])][trI[int(md[1])][:, 2] == (divTime), dim+1] = md[1]
-            trI[int(md[1])][trI[int(md[1])][:, 2] == (divTime-1), dim] = md[0]
-            trI[int(md[1])][trI[int(md[1])][:, 2] == (divTime-1),
-                            9] = freeID[0]
-            daughterID1 = trI[int(md[1])][-1, dim]
-            daughterID2 = trI[int(md[1])][-1, dim+1]
-            if (daughterID1 > 0) & (daughterID1 <= len(trI)):
-                if len(trI[int(daughterID1)]):
-                    trI[int(daughterID1)][0, dim:(dim+2)] = freeID[0]
-            if (daughterID2 > 0) & (daughterID2 <= len(trI)):
-                if len(trI[int(daughterID2)]):
-                    trI[int(daughterID2)][0, dim:(dim+2)] = freeID[0]
-            freeID = freeID[1:].copy()
-
+        try:
+            listOfMatches = matchTracksDist(famStart.copy(),
+                                            trC.copy(), [1, 1])
+            if len(listOfMatches):
+                matchData = matchIndices(listOfMatches, 'Distance')
+            else:
+                matchData = []
+            for md in matchData:
+                trI[int(md[0])][0, dim:(dim+2)] = md[1]
+                divTime = trI[int(md[0])][0, 2]
+                if len(trI[int(md[1])][trI[int(md[1])][:, 2] < divTime,
+                                       3]) == 0:
+                    divTime += 2
+                trI[int(md[1])][trI[int(md[1])][:, 2] >= divTime,
+                                3] = freeID[0]
+                if len(trI[int(md[1])][trI[int(md[1])][:, 2] >= divTime,
+                                       3]) == 1:
+                    trI[int(md[1])] = np.vstack((trI[int(md[1])],
+                                                 trI[int(md[1])][-1, :]))
+                    trI[int(md[1])][-2, dim:(dim+2)] = 0
+                    trI[int(md[1])][-1, 2] = trI[int(md[1])][-1, 2] + 1
+                trI[int(md[1])][trI[int(md[1])][:, 2] == (divTime),
+                                dim] = md[1]
+                trI[int(md[1])][trI[int(md[1])][:, 2] == (divTime),
+                                dim+1] = md[1]
+                trI[int(md[1])][trI[int(md[1])][:, 2] == (divTime-1),
+                                dim] = md[0]
+                trI[int(md[1])][trI[int(md[1])][:, 2] == (divTime-1),
+                                9] = freeID[0]
+                daughterID1 = trI[int(md[1])][-1, dim]
+                daughterID2 = trI[int(md[1])][-1, dim+1]
+                if (daughterID1 > 0) & (daughterID1 <= len(trI)):
+                    if len(trI[int(daughterID1)]):
+                        trI[int(daughterID1)][0, dim:(dim+2)] = freeID[0]
+                if (daughterID2 > 0) & (daughterID2 <= len(trI)):
+                    if len(trI[int(daughterID2)]):
+                        trI[int(daughterID2)][0, dim:(dim+2)] = freeID[0]
+                freeID = freeID[1:].copy()
+        except:
+            famStart[:, 2] = 0
         trOut = revertListIntoArray(trI)
 
         trOut = trOut[trOut[:, 2].argsort(-1, 'mergesort'), ]
@@ -2159,8 +2170,11 @@ def _matchFamilies(trIn, trLength=11, dim=8):
                 if len(tt[:, 0]) > 10:
                     tt = tt[tt[:, 2].argsort(-1, 'mergesort'), ]
                     famStart = np.vstack((famStart, tt[0]))
+        maxF0 = maxF.copy()
         maxF = famStart[:, 2].max()
         print maxF
+        if maxF0 == maxF:
+            maxF = 0
     return trOut
 
 
@@ -2271,7 +2285,7 @@ def addElongationRate(trIn, lenDim=5, divDim=9):
 
     for i in np.unique(trIn[:, 3]):
         dT = trI[int(i)].copy()
-        if (len(dT) > 10) & (dT[-1, divDim] != 0):
+        if (len(dT) > 10):
             if not len(findDivs(dT[:, lenDim])):
                 dT = dT[3:-3, :]
                 z = np.polyfit(range(len(dT)),
@@ -2345,7 +2359,7 @@ def findDescendants(trI, i, dim=8):
             if id1 != id2:
                 famList = np.hstack((famList,
                                      findDescendants(trI, id2, dim)))
-    return np.unique(famList)
+    return np.unique(famList).astype('int')
 
 
 def findDescendants2(trI, i, dim=8, n=0):
@@ -2440,7 +2454,7 @@ def orderByDescendants(ids, trI, dim=8):
     return desArray[:, 0]
 
 
-def timeToFixation(trIn, t, dim=8):
+def timeToFixation(trIn, t, dim=8, returnTR=False):
     """
     Computes the time it takes a population to fix starting at time t.
     Returns the fixation time and the id that fixes.
@@ -2452,12 +2466,36 @@ def timeToFixation(trIn, t, dim=8):
     while len(np.unique(trT[tt][:, dim+2])) != 1:
         tt += 1
         if tt == trIn[:, 2].max():
-            return ((0, 0))
+            if returnTR:
+                return np.array((0, 0)), trF
+            else:
+                return np.array((0, 0))
 
     minT = int(trF[trF[:, dim+2] == trT[tt][0, dim+2], 2].min())
     idFix = trT[minT][trT[minT][:, dim+2] == trT[tt][0, dim+2], 3]
+    if returnTR:
+        return np.array((tt, idFix)), trF
+    else:
+        return np.array((tt, idFix))
 
-    return np.array((tt, idFix))
+
+def timeToExtinction(trI, i, dim=8):
+    """
+    Computes the time it takes the lineage of cell i to become extinct.
+    Return an array containing the descendants and when they died.
+    """
+    des = findDescendants(trI, i, dim)
+    des = des[des != 0]
+
+    desDead = np.zeros((len(des), 2))
+
+    for i in range(len(des)):
+        desDead[i, 0] = des[i]
+        desDead[i, 1] = trI[des[i]][:, 2][-1]
+
+    desDead = desDead[desDead[:, 1].argsort(-1, 'mergesort'), ]
+
+    return desDead
 
 
 def findPoleAge(trIn, i, t):
