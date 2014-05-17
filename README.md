@@ -12,7 +12,10 @@ To run the celltracking algorithm, you need to have the following installed on y
 * OpenCV - http://opencv.willowgarage.com/wiki/
 * matplotlib - http://matplotlib.org/
 * hungarian 0.2.3 - https://pypi.python.org/pypi/hungarian 
-* Munkres python module - http://software.clapper.org/munkres/ 
+* Polygon2 - https://pypi.python.org/pypi/Polygon/2.0.4
+
+Most of those can be installed through pip.
+
 
 I've included 100 TIFs in a zip file under example/celltrackFigs.zip to test the tracking suite.
 

@@ -4,6 +4,8 @@ E. coli bacteria tracking suite
 ----------------------------------
 Author: Guillaume Lambert
 
+
+Check: https://medium.com/building-things-on-the-internet/40e9b2b36148
 """
 
 import numpy as np
@@ -102,7 +104,7 @@ def _anormalize(x):
     return y
 
 
-def bpass(img, lnoise, lobject):
+def bpass(img, lnoise=1, lobject=8):
     """
     imgOut = bpass(img,lnoise,lobject) return an
     image filtered according to the lnoise (size of the noise)
@@ -348,6 +350,38 @@ def removeSmallBlobs(bwImg, bSize=10):
     return np.uint8(bwImg2*maskBW)
 
 
+def rotateAndCompileVertically(bwIm, rawIm, boxsize):
+    """
+
+    """
+    labelIm = bwlabel(bwIm)
+    vertAll = np.zeros((1, boxsize[1]))
+    for i in np.unique(labelIm)[1:]:
+        try:
+            vertImg = cropCell(labelIm == (i), rawIm)
+            iSh = vertImg.shape
+            vertImg = vertImg[(iSh[0]/2 - boxsize[0]/2):
+                              (iSh[0]/2 + boxsize[0]/2),
+                              (iSh[1]/2 - boxsize[1]/2):
+                              (iSh[1]/2 + boxsize[1]/2)]
+            vertAll = np.vstack((vertAll, vertImg))
+        except:
+            vertAll = np.vstack((vertAll, np.zeros((boxsize[0], boxsize[1]))))
+    return vertAll
+
+
+def cropCell(labelIm, rawIn):
+    from scipy import ndimage
+    props = regionprops(labelIm)[0]
+    props[2] *= 2
+    labelCell = labelIm[(props[1]-props[2]):(props[1]+props[2]),
+                        (props[0]-props[2]):(props[0]+props[2])]
+    rawOut = rawIn[(props[1]-props[2]):(props[1]+props[2]),
+                   (props[0]-props[2]):(props[0]+props[2])]
+    rawOut = rawOut * labelCell
+    return ndimage.rotate(rawOut, props[4])
+
+
 def floodFill(imgIn, seedPt, pixelValue):
     """
     This script perform a flood fill,  starting from seedPt.
@@ -419,7 +453,9 @@ def _segmentCells(bwImg, iterN=1):
 
 def _fragmentCells(bwImg, propIndex, thres, iterN=1):
     """
-
+    imgOut = _fragmentCells(bwImg, propIndex, thres, iterN=1)
+    This script splits the cells for which the propIndex property
+    falls below the thres value.
     """
 
     labelImg = bwlabel(bwImg).copy()
@@ -1181,7 +1217,7 @@ def linkTracks(masterL, LL):
     return tr
 
 
-def processTracks(trIn, match=True):
+def processTracks(trIn, match=True, rematch=True):
     """
     tr = processTracks(trIn) returns a track with linked mother/daughter
     labels (tr[:, 8]),  identified family id (tr[:, 10]),  cell age (tr[:, 11])
@@ -1198,7 +1234,11 @@ def processTracks(trIn, match=True):
     tr = _splitCells(tr, 2)
 
     #Rematch tracks given the above track splits
-    tr = rematchTracks(tr, 1)
+    if rematch:
+        try:
+            tr = rematchTracks(tr, 1)
+        except:
+            pass
 
     # "Bridging track gaps"
     tr = _joinTracks(tr, 1.5, [2, 4])
@@ -1206,7 +1246,6 @@ def processTracks(trIn, match=True):
     # "Splitting Tracks"
     tr = _fixGaps(tr)
     tr = _splitTracks(tr)
-
     # "Finding division events,  Merging tracks"
     tr = _mergeTracks(tr)
 
@@ -1509,17 +1548,18 @@ def findDivs(L):
     """
     divTimes = np.array([])
     divJumpSize = 0.3
-    divJumpSizeAbs = 25
-    Lmin = 40
-    Lt = 100
-        #Remove the points with a large positive derivative,  do this twice
-    L = removePeaks(L.copy(), 'Down')
+    divJumpSizeAbs = 20
+    Lmin = 20
+    try:
+        L = removePeaks(L.copy(), 'Down')
+    except:
+        pass
     #L = removePlateau(L.copy())
     #Find the general location of a division event.
     divLoc = (np.diff(np.log(np.abs(L))) < -divJumpSize).nonzero()
-    divLoc = np.intersect1d(divLoc[0], L[L > Lmin].nonzero()[0])
+    divLoc = np.intersect1d(divLoc[0], (L > Lmin).nonzero()[0])
     divLocAbs = (np.diff((np.abs(L))) < -divJumpSizeAbs).nonzero()
-    divLocAbs = np.intersect1d(divLocAbs[0], L[L > Lt].nonzero()[0])
+    divLocAbs = np.intersect1d(divLocAbs[0], (L > Lmin).nonzero()[0])
     divTimes = np.unique(np.hstack((divLoc + 1., divLocAbs + 1.)))
     if len(divTimes) > 1:
         divTimes[np.diff(divTimes) < 3] = 0
@@ -1701,6 +1741,7 @@ def _splitTracks(trIn):
 #    trOut = removeShortCells(trOut, 20)
     _endProgress()
     trOut = extendShortTracks(trOut, 1)
+    trOut = _fixGaps(trOut)
     return trOut
 
 
@@ -2038,10 +2079,7 @@ def findFamilyID(trIn, dim=8):
     trI = splitIntoList(trIn.copy(), 3)
     cellIdList = np.unique(trIn[:, 3])
     famID = 0
-    idMax = len(cellIdList)
-    _startProgress('Finding and sorting the families:')
     while len(cellIdList) > 0:
-        _progress(1-np.double(len(cellIdList))/np.double(idMax))
         famID += 1
         unlabelledCell = cellIdList[0]
         trI2 = list(trI)
@@ -2051,7 +2089,6 @@ def findFamilyID(trIn, dim=8):
             trI[int(i)][:, -1] = famID
         cellIdList = np.setdiff1d(cellIdList, famList)
     trLong = revertListIntoArray(trI)
-    _endProgress()
     return trLong
 
 
@@ -2178,7 +2215,7 @@ def _matchFamilies(trIn, trLength=11, dim=8):
     return trOut
 
 
-def _fixGaps(trIn):
+def _fixGaps(trIn, lenDim=4):
     """
     Adds the age of the cells in the last column.
     It also fills in the blank and missing data (eg. when track skip a time)
@@ -2189,9 +2226,17 @@ def _fixGaps(trIn):
     _startProgress('Fixing the gaps in each tracks:')
     for i in range(len(trI)):
         _progress(i/np.double(len(trI)))
-        if len(trI[i]) > 0:
+        if len(trI[i]):
             if (np.diff(trI[i][:, 2]) > 1).any():
                 trI[i] = _fillGap(trI[i].copy(), age=False)
+            if np.diff(trI[i][:, lenDim])[0] < -10:
+                trI[i][0, lenDim] = trI[i][1, lenDim]
+            if np.diff(trI[i][:, lenDim])[-1] < -10:
+                trI[i][-1, lenDim] = trI[i][-2, lenDim]
+            if np.diff(trI[i][:, lenDim])[0] > 10:
+                trI[i][0, lenDim] = trI[i][1, lenDim]
+            if np.diff(trI[i][:, lenDim])[-1] > 10:
+                trI[i][-1, lenDim] = trI[i][-2, lenDim]
     trOut = revertListIntoArray(trI)
     trOut[(np.diff(trOut[:, 2]) == 0) & (np.diff(trOut[:, 3]) == 0), :] == 0
     trOut = trOut[trOut[:, 0] > 0, :]
@@ -2281,18 +2326,30 @@ def addElongationRate(trIn, lenDim=5, divDim=9):
     elongation rate.
     """
     trIn = np.hstack((trIn, np.zeros((len(trIn), 1))))
-    trI = splitIntoList(trIn, 3)
+    trL = splitIntoList(trIn, 4)
 
-    for i in np.unique(trIn[:, 3]):
-        dT = trI[int(i)].copy()
+    for j in range(len(trL)):
+        dT = trL[j].copy()
         if (len(dT) > 10):
-            if not len(findDivs(dT[:, lenDim])):
-                dT = dT[3:-3, :]
-                z = np.polyfit(range(len(dT)),
-                               np.log(np.abs(dT[:, lenDim])),  1)
-                dT[:, -1] = z[0]
-                trI[int(i)][:, -1] = z[0]
-    trOut = revertListIntoArray(trI)
+            dT = dT[dT[:, 2].argsort(-1, 'mergesort'), ]
+            d = findDivs(dT[:, lenDim])
+            dT[:, lenDim] = removePeaks(dT[:, lenDim])
+            if len(d):
+                dL = dT[:(d[0]), lenDim]
+                try:
+                    z = np.polyfit(range(len(dL)), np.log(np.abs(dL)),  1)
+                    dT[:d[0], -1] = z[0]
+                except:
+                    pass
+                for i in range(1, len(d)):
+                    dL = dT[(d[i-1]):(d[i]), lenDim]
+                    try:
+                        z = np.polyfit(range(len(dL)), np.log(np.abs(dL)),  1)
+                        dT[d[i-1]:d[i], -1] = z[0]
+                    except:
+                        pass
+                trL[j] = dT.copy()
+    trOut = revertListIntoArray(trL)
 
     return trOut
 
@@ -2484,6 +2541,8 @@ def timeToExtinction(trI, i, dim=8):
     Computes the time it takes the lineage of cell i to become extinct.
     Return an array containing the descendants and when they died.
     """
+    if len(trI[int(i)]) == 0:
+        return np.zeros((2, 2))
     des = findDescendants(trI, i, dim)
     des = des[des != 0]
 
@@ -2658,35 +2717,103 @@ def _addPoleID(trIn):
     return trOut
 
 
-"""
+def computeOpticalFlowTif(fname, nT=800, nRegions=5):
+    import Image
+    im = Image.open(fname)
+    stop = False
+    m = 1
+    GR = np.zeros((nT+10, nRegions))
+    im.seek(0)
+    lims = _splitRegions('./', nRegions)
+    while not stop:
+        bar0 = cv.transpose(np.array(im))
+        try:
+            im.seek(m)
+        except:
+            stop = True
+        else:
+            bar1 = cv.transpose(np.array(im))
+            for i in range(len(lims)):
+                b0 = np.uint16(bar0)[lims[i][0]:lims[i][1], :]
+                b1 = np.uint16(bar1)[lims[i][0]:lims[i][1], :]
+                A = _doOpticalFlow(b0, b1)
+                p = _extractFlowSpeed(A)
+                GR[m, i] = p[0]
+            m += 1
+            print m
+    return GR
 
-def computeOpticalFlow:
-    for i in range(800):
-        bar0 = array(im)
-        im.seek(i)
-            bar1 = array(im)
-        A = cv2.calcOpticalFlowFarneback(uint16(bar0), uint16(bar1),
-                         None, pyr_scale = 0.5, levels = 1,
-                         winsize = 25, iterations = 1,
-                         poly_n = 5, poly_sigma = 1.1,
-                         flags = cv2.OPTFLOW_FARNEBACK_GAUSSIAN)
-        xx[i] = sum(A[0:700, :, 1])
-        print i
-"""
 
-"""
-    xx = zeros((600, 1))
-    for i in range(350):
-        bar0 = cv2.transpose(cv2.imread('Fluo_scan_'+str(i)+'_Pos0_g.tif', -1))
-        bar1 = cv2.transpose(cv2.imread('Fluo_scan_'+str(i+1)+'_Pos0_g.tif',
-                                        -1))
-        A = cv2.calcOpticalFlowFarneback(uint8(bar0), uint8(bar1),
-                     pyr_scale = 0.5, levels = 1, winsize = 25,
-                     iterations = 1, poly_n = 5, poly_sigma = 1.1,
-                     flags = cv2.OPTFLOW_FARNEBACK_GAUSSIAN)
-        xx[i] = sum(A[:, :, 0])
-        print i
-"""
+def computeOpticalFlow(fPath, nRegions=5, flip=False, interactive=False):
+    m = 1
+    tifList = []
+    fileList = _sort_nicely(os.listdir(fPath))
+    for f in fileList:
+        if f.endswith('tif'):
+            tifList.append(f)
+    GR = np.zeros((len(tifList)+10, nRegions))
+    _startProgress('Analyzing files:')
+    kmax = len(tifList)
+    GR = np.zeros((kmax+10, nRegions))
+    bar1 = np.zeros((1,))
+    lims = np.zeros((1,))
+    if nRegions > 1:
+        while not lims.all():
+            try:
+                lims = _splitRegions(fPath, nRegions, interactive)
+            except:
+                pass
+    else:
+        lims = np.zeros((2, 2))
+        lims[0, 1] = -1
+        lims[1, 1] = -1
+    for fname in np.transpose(tifList):
+        _progress(np.double(m)/np.double(kmax))
+        bar0 = bar1.copy()
+        bar1 = cv.transpose(cv.medianBlur(cv.imread(fPath + fname, -1), 3))
+        if flip:
+            bar1 = np.fliplr(bar1)
+        if m > 1:
+            for i in range(len(lims)):
+                try:
+                    b0 = np.uint16(bar0)[lims[i][0]:lims[i][1], :]
+                    b1 = np.uint16(bar1)[lims[i][0]:lims[i][1], :]
+                    A = _doOpticalFlow(b0, b1)
+                    p = _extractFlowSpeed(A)
+                    GR[m, i] = p[0]
+                except:
+                    pass
+        m += 1
+    return GR
+
+
+def _doOpticalFlow(img0, img1):
+    """
+    Takes the thw input images and outputs the optical flow map
+    """
+    A = cv.calcOpticalFlowFarneback(img0, img1,
+                                    pyr_scale=0.5, levels=2,
+                                    winsize=125, iterations=1,
+                                    poly_n=5, poly_sigma=10.1,
+                                    flags=cv.OPTFLOW_FARNEBACK_GAUSSIAN)
+    return A
+
+
+def _extractFlowSpeed(imgA, dim=0):
+    """
+    Takes the output of _doOpticalFlow and computes the slope of the
+    flow along dimension dim
+    """
+    cYL = (abs(np.diff(imgA[:, :, dim].mean(0))) > 0.005).nonzero()[0][0]
+    cYR = (abs(np.diff(imgA[:, :, dim].mean(0))) > 0.005).nonzero()[0][-1]
+    if cYL < (imgA.shape[1]-cYR):
+        V = -np.fliplr(imgA[:, :cYR, dim]).mean(0)
+    elif cYL >= (imgA.shape[1]-cYR):
+        V = imgA[:, cYL:, dim].mean(0)
+    y = V[75:]
+    x = np.arange(len(y))
+    p = np.polyfit(x, y, 1)
+    return p
 
 
 def optimizeParameters(fPath, num):
@@ -2747,11 +2874,12 @@ def optimizeParameters(fPath, num):
     return lnoise0, lobject0, boxSize0
 
 
-def _splitRegions(fPath, numberOfRegions):
+def _splitRegions(fPath, numberOfRegions, interactive=False):
     """
     Performs a kmeans analysis to identify each regions.
     """
     import random as rnd
+    import Image
     tifList = []
     fileList = _sort_nicely(os.listdir(fPath))
     for f in fileList:
@@ -2762,7 +2890,14 @@ def _splitRegions(fPath, numberOfRegions):
     stop = False
     manual = False
     while not stop:
-        img = cv.imread(fPath+tifList[num], -1)
+        if len(tifList) > 1:
+            img = cv.imread(fPath+tifList[num], -1)
+        else:
+            num = rnd.randint(1, int(500))
+            im = Image.open(fPath+tifList[0])
+            print num
+            im.seek(num)
+            img = np.array(im)
         img = cv.transpose(img)
 
         imgInt = img.mean(1)
@@ -2771,7 +2906,7 @@ def _splitRegions(fPath, numberOfRegions):
             for i in range(numberOfRegions+1):
                 x[i] = np.double(raw_input(("Enter limit #"+str(i)+": ")))
         else:
-            _, x = peakdet(smooth(imgInt, 11), 100)
+            _, x = peakdet(mat2gray(smooth(imgInt, 11), 255), 100)
             x = x[:, 0]
             if len(x) == (numberOfRegions - 1):
                 x = np.hstack((1, x, 990))
@@ -2781,21 +2916,99 @@ def _splitRegions(fPath, numberOfRegions):
         for i in range(1, numberOfRegions-1, 1):
             xLimits = np.vstack((xLimits, np.array([(x[i]), x[i+1]])))
         xLimits = np.vstack((xLimits, np.array([(x[i+1]), x[-1]])))
-
-        plt.imshow(img)
-        for i in range(len(x)):
-            plt.plot([0, 1000], [x[i], x[i]], 'r')
-        plt.plot(imgInt, np.arange(len(imgInt)))
-        plt.show()
-        satisfiedYN = raw_input(("Are you satisfied with the "
-                                 "partition? (yes or no) "))
-        if satisfiedYN == 'yes':
+        if interactive:
+            plt.imshow(img)
+            for i in range(len(x)):
+                plt.plot([0, 1000], [x[i], x[i]], 'r')
+            plt.plot(imgInt, np.arange(len(imgInt)))
+            plt.show()
+            satisfiedYN = raw_input(("Are you satisfied with the "
+                                     "partition? (yes or no) "))
+            if satisfiedYN == 'yes':
+                stop = True
+            elif satisfiedYN == 'no':
+                manual = raw_input(("Do you want to manually enter the "
+                                    "chamber limits? (yes or no) "))
+        else:
             stop = True
-        elif satisfiedYN == 'no':
-            manual = raw_input(("Do you want to manually enter the "
-                                "chamber limits? (yes or no) "))
-
+    print xLimits
     return xLimits.astype('int')
+
+
+def savitzky_golay(y, window_size, order, deriv=0, rate=1):
+    r"""Smooth (and optionally differentiate) data with a Savitzky-Golay
+    filter.
+    The Savitzky-Golay filter removes high frequency noise from data.
+    It has the advantage of preserving the original shape and
+    features of the signal better than other types of filtering
+    approaches, such as moving averages techniques.
+    Parameters
+    ----------
+    y : array_like, shape (N,)
+        the values of the time history of the signal.
+    window_size : int
+        the length of the window. Must be an odd integer number.
+    order : int
+        the order of the polynomial used in the filtering.
+        Must be less then `window_size` - 1.
+    deriv: int
+        the order of the derivative to compute (default = 0 means only
+        smoothing)
+    Returns
+    -------
+    ys : ndarray, shape (N)
+        the smoothed signal (or it's n-th derivative).
+    Notes
+    -----
+    The Savitzky-Golay is a type of low-pass filter, particularly
+    suited for smoothing noisy data. The main idea behind this
+    approach is to make for each point a least-square fit with a
+    polynomial of high order over a odd-sized window centered at
+    the point.
+    Examples
+    --------
+    t = np.linspace(-4, 4, 500)
+    y = np.exp( -t**2 ) + np.random.normal(0, 0.05, t.shape)
+    ysg = savitzky_golay(y, window_size=31, order=4)
+    import matplotlib.pyplot as plt
+    plt.plot(t, y, label='Noisy signal')
+    plt.plot(t, np.exp(-t**2), 'k', lw=1.5, label='Original signal')
+    plt.plot(t, ysg, 'r', label='Filtered signal')
+    plt.legend()
+    plt.show()
+    References
+    ----------
+    .. [1] A. Savitzky, M. J. E. Golay, Smoothing and Differentiation of
+       Data by Simplified Least Squares Procedures. Analytical
+       Chemistry, 1964, 36 (8), pp 1627-1639.
+    .. [2] Numerical Recipes 3rd Edition: The Art of Scientific Computing
+       W.H. Press, S.A. Teukolsky, W.T. Vetterling, B.P. Flannery
+       Cambridge University Press ISBN-13: 9780521880688
+    """
+    import numpy as np
+    from math import factorial
+
+    try:
+        window_size = np.abs(np.int(window_size))
+        order = np.abs(np.int(order))
+    except ValueError:
+        raise ValueError("window_size and order have to be of type int")
+    if window_size % 2 != 1 or window_size < 1:
+        raise TypeError("window_size size must be a positive odd number")
+    if window_size < order + 2:
+        raise TypeError("window_size is too small for the polynomials order")
+    order_range = range(order+1)
+    half_window = (window_size - 1) // 2
+    # precompute coefficients
+    b = np.mat([[k**i for i in order_range] for k in range(-half_window,
+                                                           half_window+1)])
+    m = np.linalg.pinv(b).A[deriv] * rate**deriv * factorial(deriv)
+    # pad the signal at the extremes with
+    # values taken from the signal itself
+    firstvals = y[0] - np.abs(y[1:half_window+1][::-1] - y[0])
+    lastvals = y[-1] + np.abs(y[-half_window-1:-1][::-1] - y[-1])
+    y = np.concatenate((firstvals, y, lastvals))
+    return np.convolve(m[::-1], y, mode='valid')
 
 
 def saveListOfArrays(fname, listData):
@@ -2887,14 +3100,14 @@ if __name__ == "__main__":
                                " (leave empty to use current location) "))
                     or "./")
     else:
-        FILEPATH = './'
+        FILEPATH = sys.argv[2]
         STABILIZEIMAGES = 'no'
-        PROCESSFILES = 'no'
+        PROCESSFILES = 'yes'
         LINKTRACKS = 'yes'
         PROCESSTRACKS = 'yes'
         SAVEPATH = './'
-        MULTIPLEREGIONS = 'no'
-        NUMBEROFREGIONS = 1
+        MULTIPLEREGIONS = 'yes'
+        NUMBEROFREGIONS = 5
         LIMITFILES = 0
         MATCHF = True
     MATCHF = True
