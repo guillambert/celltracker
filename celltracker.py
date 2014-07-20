@@ -65,7 +65,7 @@ def _intersect_rows(b, a):
 
 def smooth(x, windowLength=3, stype='boxcar'):
     """
-    xs=smooth(x,windowLength,stype='boxcar') is a simple moving
+    xs=smooth(x, windowLength, stype='boxcar') is a simple moving
     average smoothing function
     Type can be:
         -'boxcar'
@@ -74,6 +74,8 @@ def smooth(x, windowLength=3, stype='boxcar'):
     """
     from scipy import signal
     x = np.double(x)
+    if windowLength <= 1:
+        return x
     s = np.r_[2*x[0]-x[windowLength:1:-1], x, 2*x[-1]-x[-1:-windowLength:-1]]
 
     if stype == 'boxcar':
@@ -83,7 +85,7 @@ def smooth(x, windowLength=3, stype='boxcar'):
     elif stype == 'triang':
         w = signal.triang(2*windowLength)
     y = np.convolve(w/w.sum(), s, mode='valid')
-    #y=np.convolve(w/w.sum(),x,mode='same')
+    #y=np.convolve(w/w.sum(), x, mode='same')
     return y[((windowLength-1)/2):-((windowLength-1)/2)]
 
 
@@ -106,7 +108,7 @@ def _anormalize(x):
 
 def bpass(img, lnoise=1, lobject=8):
     """
-    imgOut = bpass(img,lnoise,lobject) return an
+    imgOut = bpass(img, lnoise, lobject) return an
     image filtered according to the lnoise (size of the noise)
     and the lobject (typical size of the object in the image) parameter.
 
@@ -126,13 +128,16 @@ def bpass(img, lnoise=1, lobject=8):
     #Apply the filter to the input image
     gconv0 = cv.filter2D(np.transpose(image_array), -1, gauss_kernel)
     gconv = cv.filter2D(np.transpose(gconv0), -1, gauss_kernel)
-    bconv0 = cv.filter2D(np.transpose(image_array), -1, boxcar_kernel)
-    bconv = cv.filter2D(np.transpose(bconv0), -1, boxcar_kernel)
-    #Create the filtered image
-    filtered = gconv - bconv
-    #Remove the values lower than zero
-    filtered[filtered < 0] = 0
-    #Output the final image
+    if lobject > 0:
+        bconv0 = cv.filter2D(np.transpose(image_array), -1, boxcar_kernel)
+        bconv = cv.filter2D(np.transpose(bconv0), -1, boxcar_kernel)
+        #Create the filtered image
+        filtered = gconv - bconv
+        #Remove the values lower than zero
+        filtered[filtered < 0] = 0
+        #Output the final image
+    else:
+        filtered = gconv.copy()
     imgOut = filtered.copy()
     return imgOut
 
@@ -141,7 +146,6 @@ def mat2gray(img, scale=1):
     """
     imgOut = mat2gray(img, scale) return a rescaled matrix from 1 to scale
     """
-
     imgM = img - img.min()
 
     imgOut = imgM*np.double(scale)/imgM.max()
@@ -180,9 +184,9 @@ def regionprops(bwImage, scaleFact=1):
     #import the relevant modules
     #Find the contours
     bwI = np.uint8(bwImage.copy())
-    csr, _ = cv.findContours(bwI.copy(),
-                             mode=cv.RETR_TREE,
-                             method=cv.CHAIN_APPROX_SIMPLE)
+    _, csr, _ = cv.findContours(bwI.copy(),
+                                mode=cv.RETR_TREE,
+                                method=cv.CHAIN_APPROX_SIMPLE)
     numC = int(len(csr))
     #Initialize the variables
     k = 0
@@ -202,7 +206,7 @@ def regionprops(bwImage, scaleFact=1):
             #Orientation
             centroid, axes, angle = cv.fitEllipse(csr[i])
             Orientation[k] = angle
-            #Major,Minor axes
+            #Major, Minor axes
             #Centroid
             m = cv.moments(csr[i])
             if m['m00'] > 0:
@@ -243,9 +247,9 @@ def bwlabel(bwImg, border=-1):
     bwImg2 = np.uint8(bwImg.copy())
     bw = np.zeros(bwImg2.shape)
     #Find the contours,  count home many there are
-    csl, _ = cv.findContours(bwImg2.copy(),
-                             mode=cv.RETR_TREE,
-                             method=cv.CHAIN_APPROX_SIMPLE)
+    _, csl, _ = cv.findContours(bwImg2.copy(),
+                                mode=cv.RETR_TREE,
+                                method=cv.CHAIN_APPROX_SIMPLE)
     numC = int(len(csl))
     #Label each cell in the figure
     k = 0
@@ -299,7 +303,7 @@ def traceLabel(bImgIn, trIn, dim):
 
 def distContours(trT1, trT2, dist):
     """
-    distMatrix = traceContours(trT1,trT2,dist) return im, a Polygon
+    distMatrix = traceContours(trT1, trT2, dist) return im, a Polygon
     object containing the distance between each contour present in
     the datasets trT1 and trT2. Only the contours in trT1 are dilated
     by the factos dist.
@@ -335,9 +339,9 @@ def removeSmallBlobs(bwImg, bSize=10):
     bw = np.zeros(bwImg2.shape)
 
         #Find the contours,  count home many there are
-    csl, _ = cv.findContours(bwImg2.copy(),
-                             mode=cv.RETR_TREE,
-                             method=cv.CHAIN_APPROX_SIMPLE)
+    _, csl, _ = cv.findContours(bwImg2.copy(),
+                                mode=cv.RETR_TREE,
+                                method=cv.CHAIN_APPROX_SIMPLE)
     numC = int(len(csl))
     #Label each cell in the figure which are smaller than bSize
     for i in range(numC):
@@ -404,9 +408,9 @@ def _avgCellInt(rawImg, bwImg):
     bwImg0 = np.uint8(bwImg.copy())
     bw = np.zeros(bwImg0.shape)
 
-    csa, _ = cv.findContours(bwImg0,
-                             mode=cv.RETR_TREE,
-                             method=cv.CHAIN_APPROX_SIMPLE)
+    _, csa, _ = cv.findContours(bwImg0,
+                                mode=cv.RETR_TREE,
+                                method=cv.CHAIN_APPROX_SIMPLE)
     numC = int(len(csa))
     k = 0
     for i in range(0, numC):
@@ -432,7 +436,7 @@ def _segmentCells(bwImg, iterN=1):
     """
     labelImg = bwlabel(bwImg).copy()
     lowImg = np.uint16(labelImg > 0)
-    markers = cv.distanceTransform(np.uint8(lowImg), cv.cv.CV_DIST_L2, 5)
+    markers = cv.distanceTransform(np.uint8(lowImg), cv.DIST_L2, 5)
     markers32 = np.int32(markers)
 #    markers32 = np.int32(mat2gray(markers, 255))
 
@@ -495,9 +499,9 @@ def dilateConnected(imgIn, nIter):
         bw = imgOut*0
         if i:
             imgT = (imgOut == i)
-            csl, _ = cv.findContours(np.uint8(imgT.copy()),
-                                     mode=cv.RETR_TREE,
-                                     method=cv.CHAIN_APPROX_SIMPLE)
+            _, csl, _ = cv.findContours(np.uint8(imgT.copy()),
+                                        mode=cv.RETR_TREE,
+                                        method=cv.CHAIN_APPROX_SIMPLE)
             cv.drawContours(bw,  csl,  0,  1,  thickness=2)
             bwAll = bwAll + bw
     imgOut = imgOut * (1-(bwAll >= 2))
@@ -769,7 +773,6 @@ def processImage(imgIn, scaleFact=1, sBlur=0.5, sAmount=0, lnoise=0.75,
     bwImg = cv.adaptiveThreshold(np.uint8(imgB), 255,
                                  cv.ADAPTIVE_THRESH_GAUSSIAN_C,
                                  cv.THRESH_BINARY, int(boxSize), 0)
-
     #Dilate cells while maintaining them unconnected
     bwImg = dilateConnected(bwImg, 1)
     bwImg = _segmentCells(bwImg > 0)
@@ -1139,12 +1142,7 @@ def trackCells(fPath, lnoise=0.75, lobject=7, boxSize=15,
             bwL[i] = bwlabel(bwImg[i])
             fileNum = k - 1
             if bwL[i].max() > 5:
-
-                regionP[i] = regionprops(bwImg[i], scaleFact)
-                avgCellI = _avgCellInt(imgCropped[i].copy(), bwImg[i].copy())
-                if np.isnan(avgCellI).any():
-                    avgCellI[np.isnan(avgCellI)] = 0
-                regionP[i] = np.hstack([regionP[i], avgCellI[1:]])
+                regionP[i] = _getRegionP(bwImg[i], imgCropped[i], scaleFact)
                 if (fileNum-fileNum0) == 1:
                     areaList[i] = labelOverlap(bwL0[i], bwL[i])
                     AA[i].append(areaList[i])
@@ -1162,6 +1160,22 @@ def trackCells(fPath, lnoise=0.75, lobject=7, boxSize=15,
         fileNum0 = fileNum + 0
     _endProgress()
     return masterList, LL, AA
+
+
+def _getRegionP(bwImg, imgInt, scaleFact):
+    """
+    regionProperties = _getRegionP(bwImg, imgInt, scaleFact)
+    This function computes the regionprops properties of a bw image
+    and finds the intensity mapping between the binary image and the
+    image imgInt
+    """
+    img = bwImg.copy()
+    regionP = regionprops(img, scaleFact)
+    avgCellI = _avgCellInt(imgInt.copy(), img.copy())
+    if np.isnan(avgCellI).any():
+        avgCellI[np.isnan(avgCellI)] = 0
+    regionP = np.hstack((regionP, avgCellI[1:]))
+    return regionP
 
 
 def _updateTR(M, L, time):
@@ -1217,7 +1231,7 @@ def linkTracks(masterL, LL):
     return tr
 
 
-def processTracks(trIn, match=True, rematch=True):
+def processTracks(trIn, match=True, rematch=True, returnData=False):
     """
     tr = processTracks(trIn) returns a track with linked mother/daughter
     labels (tr[:, 8]),  identified family id (tr[:, 10]),  cell age (tr[:, 11])
@@ -1230,43 +1244,48 @@ def processTracks(trIn, match=True, rematch=True):
     tr = trIn.copy()
 
     # 'Fixing sudden cell size changes'
-    tr = _splitCells(tr, 1)
-    tr = _splitCells(tr, 2)
+    tr1 = _splitCells(tr, 1)
+    tr2 = _splitCells(tr1, 2)
 
     #Rematch tracks given the above track splits
     if rematch:
         try:
-            tr = rematchTracks(tr, 1)
+            tr3 = rematchTracks(tr2, 1)
         except:
-            pass
-
+            tr3 = tr2.copy()
+    else:
+        tr3 = tr2.copy()
     # "Bridging track gaps"
-    tr = _joinTracks(tr, 1.5, [2, 4])
+    tr4 = _joinTracks(tr3, 1.5, [2, 4])
 
     # "Splitting Tracks"
-    tr = _fixGaps(tr)
-    tr = _splitTracks(tr)
+    tr5 = _fixGaps(tr4)
+    tr6 = _splitTracks(tr5)
     # "Finding division events,  Merging tracks"
-    tr = _mergeTracks(tr)
+    tr7 = _mergeTracks(tr6)
 
     # "find family IDs"
-    tr = findFamilyID(tr)
+    tr8 = findFamilyID(tr7)
     if match:
-        tr = _matchFamilies(tr)
-
+        tr9 = _matchFamilies(tr8)
+    else:
+        tr9 = tr8.copy()
     # "fix family IDs"
 
     # "Adding cell Age"
-    tr = addCellAge(tr)
+    tr10 = addCellAge(tr9)
 
     # "Adding Pole Age"
-    tr = _addPoleAge(tr)
+    tr11 = _addPoleAge(tr10)
 
     # "Compute elongation rate"
-    tr = _smoothDim(tr, 5)
-    tr = addElongationRate(tr)
-
-    return tr
+    tr12 = _smoothDim(tr11, 5)
+    tr13 = addElongationRate(tr12)
+    if returnData:
+        return [tr, tr1, tr2, tr3, tr4, tr5, tr6,
+                tr7, tr8, tr9, tr10, tr11, tr12, tr13]
+    else:
+        return tr13
 
 
 def getBoundingBox(param, dist=1):
@@ -2253,13 +2272,14 @@ def addCellAge(trIn):
 
     trIn = np.hstack((trIn, np.zeros((len(trIn), 1))))
     trI = splitIntoList(trIn, 3)
-
     for i in range(len(trI)):
         if len(trI[i]) > 0:
             motherID = trI[i][0, 8]
             if motherID > 0:
                 if len(trI[int(motherID)]) > 0:
                     divisionTime = trI[int(motherID)][-1, 2]
+                else:
+                    divisionTime = trI[i][0, 2]
             else:
                 divisionTime = trI[i][0, 2]
             tStart = trI[i][0, 2]-divisionTime-1
@@ -2375,7 +2395,7 @@ def _smoothDim(trIn, dim):
 
 def extractLineage(trI, i, dim=8):
     """
-    lin = extrackLineage(trIn, id) return the lineage starting from id .
+    lin = extractLineage(trI, i, dim=8) return the lineage starting from id .
         The data is ordered chronologically as lin[n] = [motherID,  time]
     """
     try:
@@ -2400,6 +2420,18 @@ def extractLineage(trI, i, dim=8):
     if lin.ndim > 1:
         lin = np.flipud(lin)
     return lin.astype('int')
+
+
+def extractLineageData(trI, i, dim=8):
+    """
+    trLin = extractLineageData(trI, i, dim=8) returns the track data for the
+    lineage that ends at cell i
+    """
+    lin = extractLineage(trI, i, dim)
+    trOut = trI[int(i)][0]*0
+    for j in lin[:, 0]:
+        trOut = np.vstack((trOut, trI[int(j)]))
+    return trOut[1:, :]
 
 
 def findDescendants(trI, i, dim=8):
@@ -2755,8 +2787,8 @@ def computeOpticalFlow(fPath, nRegions=5, flip=False, interactive=False):
     _startProgress('Analyzing files:')
     kmax = len(tifList)
     GR = np.zeros((kmax+10, nRegions))
-    bar1 = np.zeros((1,))
-    lims = np.zeros((1,))
+    bar1 = np.zeros((1, ))
+    lims = np.zeros((1, ))
     if nRegions > 1:
         while not lims.all():
             try:
@@ -2885,7 +2917,7 @@ def _splitRegions(fPath, numberOfRegions, interactive=False):
     for f in fileList:
         if f.endswith('tif'):
             tifList.append(f)
-    num = rnd.randint(1, int(len(tifList)))
+    num = rnd.randint(1, int(len(tifList)/100.))
     print num
     stop = False
     manual = False
@@ -2944,7 +2976,7 @@ def savitzky_golay(y, window_size, order, deriv=0, rate=1):
     approaches, such as moving averages techniques.
     Parameters
     ----------
-    y : array_like, shape (N,)
+    y : array_like, shape (N, )
         the values of the time history of the signal.
     window_size : int
         the length of the window. Must be an odd integer number.
@@ -3018,7 +3050,7 @@ def saveListOfArrays(fname, listData):
     arrayOut = np.hstack((0*np.ones((len(listData[0]), 1)), listData[0], ))
     for i in range(1, len(listData)):
         arrayTemp = np.hstack((i*np.ones((len(listData[i]), 1)),
-                               listData[i],))
+                               listData[i], ))
         arrayOut = np.vstack((arrayOut, arrayTemp))
 
     np.savez(fname, arrayOut)
