@@ -74,7 +74,11 @@ def smooth(x, windowLength=3, stype='boxcar'):
     """
     from scipy import signal
     x = np.double(x)
+<<<<<<< HEAD
     if windowLength <= 1:
+=======
+    if windowLength == 1:
+>>>>>>> 2da372fd6182ab9d5b8f039013044c272134d44c
         return x
     s = np.r_[2*x[0]-x[windowLength:1:-1], x, 2*x[-1]-x[-1:-windowLength:-1]]
 
