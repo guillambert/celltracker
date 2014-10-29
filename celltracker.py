@@ -306,7 +306,7 @@ def distContours(trT1, trT2, dist):
     distMatrix = traceContours(trT1, trT2, dist) return im, a Polygon
     object containing the distance between each contour present in
     the datasets trT1 and trT2. Only the contours in trT1 are dilated
-    by the factos dist.
+    by the factor dist.
     """
     k = np.max((trT1.shape[0], trT2.shape[0]))
     distMatrix = np.zeros((k, k))
@@ -1032,10 +1032,10 @@ def stabilizeImages(fPath, endsWith='tif', SAVE=True, preProcess=False,
                 if medianAlign:
                     A = (cv.matchTemplate(np.uint8(imgA > np.median(imgA)*2),
                                           np.uint8(imgB > np.median(imgB)*2),
-                                          cv.cv.CV_TM_CCORR_NORMED))
+                                          cv.TM_CCORR_NORMED))
                 else:
                     A = (cv.matchTemplate(imgA, imgB,
-                                          cv.cv.CV_TM_CCORR_NORMED))
+                                          cv.TM_CCORR_NORMED))
 
             else:
                 imgA = np.uint8(mat2gray(img0, 255))
@@ -1044,7 +1044,7 @@ def stabilizeImages(fPath, endsWith='tif', SAVE=True, preProcess=False,
                 if medianAlign:
                     A = (cv.matchTemplate(np.uint8(imgA > np.median(imgA)*2),
                                           np.uint8(imgB > np.median(imgB)*2),
-                                          cv.cv.CV_TM_CCORR_NORMED))
+                                          cv.TM_CCORR_NORMED))
                 elif thres > 0:
                     img1 = cv.dilate(np.uint8(imgA > thres),
                                      None, iterations=5) - (imgA > thres)
@@ -1052,12 +1052,12 @@ def stabilizeImages(fPath, endsWith='tif', SAVE=True, preProcess=False,
                                      None, iterations=5) - (imgB > thres)
                     A = (cv.matchTemplate(np.uint8(np.gradient(img1)[0]),
                                           np.uint8(np.gradient(img2)[0]),
-                                          cv.cv.CV_TM_CCORR_NORMED))
+                                          cv.TM_CCORR_NORMED))
                     if k > 500:
                         return translationList
                 else:
                     A = (cv.matchTemplate(imgA, imgB,
-                                          cv.cv.CV_TM_CCORR_NORMED))
+                                          cv.TM_CCORR_NORMED))
             maxLoc = (A == A.max()).nonzero()
 
             deltaX = np.arange(-borderSize, borderSize + 1)[maxLoc[0]][0]
@@ -3142,8 +3142,12 @@ if __name__ == "__main__":
         NUMBEROFREGIONS = 5
         LIMITFILES = 0
         MATCHF = True
+        if len(sys.argv[3]):
+            NUMBEROFREGIONS = int(sys.argv[3])
+            if int(sys.argv[3]) <= 1:
+                MULTIPLEREGIONS = 'no'
     MATCHF = True
-
+    print sys.argv
     np.savez(SAVEPATH+'processFiles.npz', lnoise=lnoise,
              lobject=lobject, boxSize=boxSize)
 
